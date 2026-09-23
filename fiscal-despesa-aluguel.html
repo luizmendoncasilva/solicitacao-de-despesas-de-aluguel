@@ -319,7 +319,7 @@ function renderAluguelSolicitacao() {
           ${aluguelField('Taxa de cobrança/administração', 'dedCobranca', { type: 'currency' })}
           ${aluguelField('Sublocação', 'dedSublocacao', { type: 'currency' })}
         </div>
-        <div style="font-size:11.5px;color:var(--text-tertiary);margin-top:-4px;">Reduzem o rendimento tributável apenas quando o ônus foi do locador (RN-11).</div>
+        <div style="font-size:11.5px;color:var(--text-tertiary);margin-top:-4px;">Essas deduções só reduzem o valor tributável quando o custo foi pago pelo próprio locador.</div>
         <button type="button" class="aluguel-ded-toggle" onclick="aluguelToggleDeducoes()" style="margin-top:10px;"><i data-lucide="minus-circle" style="width:14px;height:14px;"></i>Ocultar deduções</button>
       `;
     }
@@ -331,10 +331,10 @@ function renderAluguelSolicitacao() {
       ${aluguelUploadField('Recibo de locação', 'recibo')}
       ${aluguelUploadField('Comprovante de pagamento', 'comprovante')}
     </div>
-    <div style="font-size:11.5px;color:var(--text-tertiary);margin-top:2px;">Ausência de recibo ou comprovante não bloqueia o envio — apenas gera um alerta de auditoria não bloqueante (RN-07).</div>
+    <div style="font-size:11.5px;color:var(--text-tertiary);margin-top:2px;">Se não anexar o recibo ou o comprovante agora, o envio continua liberado — só fica um alerta registrado para revisão depois.</div>
 
     <div class="aluguel-footer">
-      <div class="hint">Campos com <b>*</b> são obrigatórios — em branco, bloqueiam o envio (RN-07).</div>
+      <div class="hint">Campos com <b>*</b> são obrigatórios e precisam estar preenchidos para enviar.</div>
       <button class="btn btn-primary btn-lg" onclick="enviarSolicitacaoAluguel()"><i data-lucide="send" class="w-4 h-4"></i>Enviar solicitação</button>
     </div>
   `;
@@ -365,7 +365,7 @@ function enviarSolicitacaoAluguel() {
 
   if (!aluguelValidate(taskId)) {
     switchFormTab('solicitacao');
-    showAlertModal({ title: 'Campos obrigatórios pendentes', message: 'Preencha todos os campos marcados em vermelho antes de enviar. Campo obrigatório em branco bloqueia o envio (RN-07).' });
+    showAlertModal({ title: 'Campos obrigatórios pendentes', message: 'Preencha todos os campos marcados em vermelho antes de enviar a solicitação.' });
     return;
   }
 
