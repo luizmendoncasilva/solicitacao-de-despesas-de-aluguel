@@ -358,13 +358,6 @@ function aluguelValidate(taskId) {
   return Object.keys(errs).length === 0;
 }
 
-function fmtCurrencyAluguel(v) {
-  if (!v) return '—';
-  const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.'));
-  if (isNaN(n)) return 'R$ ' + v;
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
 function enviarSolicitacaoAluguel() {
   const task = getTaskById(state.currentTaskId);
   if (!task) return;
@@ -377,86 +370,27 @@ function enviarSolicitacaoAluguel() {
   }
 
   const d = aluguelDraft(taskId);
-  const semAnexos = !d.recibo && !d.comprovante;
+  const isNaoResidente = d.residente === 'Não';
 
+  // Sem tela de confirmação: ao enviar, a tarefa só passa direto para
+  // concluída e o operador volta para a fila (decisão de produto — ver
+  // conversa com Andressa em 23/09/2026: "não precisa daquela confirmação,
+  // só atualiza a tarefa pro status de concluída mesmo").
   const completedTask = { ...task, completedAt: 'agora mesmo' };
   state.completed.push(completedTask);
   state.active = null;
+  state.currentTaskId = null;
   state.queue = state.queue.filter(t => t.id !== taskId);
   state.stationed = state.stationed.filter(t => t.id !== taskId);
 
-  renderSuccessAluguel(task, d, semAnexos);
-  showScreen('success');
-}
-
-function renderSuccessAluguel(task, d, semAnexos) {
-  const isNaoResidente = d.residente === 'Não';
-  const heroEl = qs('.success-hero');
-  const heroTitle = qs('.success-hero h1');
-  const heroIconCircle = qs('.success-hero .icon-circle');
-
-  if (isNaoResidente) {
-    heroEl.style.background = 'linear-gradient(135deg, #fef3c7, #fffbeb)';
-    heroEl.style.borderColor = '#fcd34d';
-    heroTitle.textContent = 'Despesa registrada — anomalia aberta';
-    heroTitle.style.color = '#92400e';
-    heroIconCircle.style.background = 'var(--warning)';
-    heroIconCircle.innerHTML = '<i data-lucide="alert-triangle" style="width:36px;height:36px;"></i>';
-  } else {
-    heroEl.style.background = '';
-    heroEl.style.borderColor = '';
-    heroTitle.textContent = 'Solicitação enviada ao Motor Fiscal SN';
-    heroTitle.style.color = '';
-    heroIconCircle.style.background = '';
-    heroIconCircle.innerHTML = '<i data-lucide="check" style="width:36px;height:36px;"></i>';
-  }
-
-  const rows = [];
-  rows.push(['Empresa', task.clientName]);
-  rows.push(['CNPJ', task.cnpj]);
-  rows.push(['Competência', task.competencia || '—']);
-  rows.push(['Locador', (d.nomeLocador || '—') + ' · CPF ' + (d.cpfLocador || '—')]);
-  rows.push(['Residente no Brasil', d.residente || '—']);
-  if (isNaoResidente) {
-    rows.push(['País de residência', d.paisResidencia || 'Não informado']);
-    rows.push(['Procurador designado', d.procuradorDesignado || 'Não informado']);
-  }
-  rows.push(['Data do pagamento', d.dataPagamento || '—']);
-  rows.push(['Valor bruto', fmtCurrencyAluguel(d.valorBruto)]);
-  if (!isNaoResidente) {
-    const totalDed = ['dedIptu', 'dedCondominio', 'dedCobranca', 'dedSublocacao']
-      .reduce((s, k) => s + (parseFloat(String(d[k] || '0').replace(/\./g, '').replace(',', '.')) || 0), 0);
-    rows.push(['Deduções informadas', totalDed ? fmtCurrencyAluguel(totalDed) : 'Nenhuma']);
-    rows.push(['Pagamento via imobiliária/procurador', d.viaImob + (d.viaImob === 'Sim' ? ' · ' + (d.nomeImob || '—') : '')]);
-  }
-  rows.push(['Operador(a)', OPERATOR_NAME]);
-  rows.push(['Enviado em', 'hoje às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })]);
-  rows.push(['Tarefa', '#' + task.id]);
-
-  qs('#success-summary').innerHTML = rows.map(([l, v]) => `<div class="summary-row"><span class="summary-label">${esc(l)}</span><span class="summary-value">${esc(String(v))}</span></div>`).join('');
-
-  const noteId = 'aluguel-success-note';
-  let note = document.getElementById(noteId);
-  if (note) note.remove();
-  if (isNaoResidente || semAnexos) {
-    note = document.createElement('div');
-    note.id = noteId;
-    note.style.marginBottom = '20px';
-    if (isNaoResidente) {
-      note.innerHTML = `<div class="alert-banner" style="border-left-color:var(--warning);background:linear-gradient(to right,#fffbeb,#fff);">
-        <i data-lucide="alert-triangle" style="width:16px;height:16px;color:var(--warning);flex-shrink:0;"></i>
-        <div style="font-size:13px;line-height:1.6;color:#78350f;"><strong>Retenção não realizada pelo motor.</strong> A responsabilidade é do procurador do locador no Brasil. Despesa registrada pelo valor integral; a anomalia foi encaminhada para tratativa humana.</div>
-      </div>`;
-    } else {
-      note.innerHTML = `<div class="alert-banner">
-        <i data-lucide="info" style="width:16px;height:16px;color:var(--brand-pink);flex-shrink:0;"></i>
-        <div style="font-size:13px;line-height:1.6;"><strong>Alerta de auditoria (não bloqueante):</strong> recibo e comprovante não foram anexados. O envio seguiu normalmente, mas o registro fica sinalizado para revisão.</div>
-      </div>`;
-    }
-    const summaryEl = qs('#success-summary');
-    summaryEl.parentNode.insertBefore(note, summaryEl);
-  }
-  refreshIcons();
+  renderHome();
+  showScreen('home');
+  flash(
+    isNaoResidente
+      ? 'Despesa registrada — anomalia aberta para tratativa humana. Tarefa concluída.'
+      : 'Solicitação enviada ao Motor Fiscal SN. Tarefa concluída.',
+    isNaoResidente ? 'warning' : 'success'
+  );
 }
 </script>
 <!-- Ordem fixa, sempre a mesma, cockpit-07 (init) sempre por último -->
