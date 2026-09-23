@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>Solicitação de Despesa de Aluguel · Protótipo Cockpit</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Este fluxo não usa: abas de formulário (só 1 aba), o botão padrão de
+     "Editar" (o formulário já nasce editável, pois é uma coleta de dados
+     nova, não uma revisão de dados já preenchidos), o decision-card padrão
+     (substituído pelo próprio botão "Enviar solicitação" dentro do card de
+     dados) nem o bloco de anexos do cliente (os anexos aqui são os uploads
+     opcionais de recibo/comprovante, dentro do próprio formulário). */
+  #form-tabs, #form-edit-btn, .decision-card, #attachments-block { display: none !important; }
+
+  .aluguel-ctx { display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface-subtle); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:20px; font-size:12.5px; color:var(--text-secondary); }
+  .aluguel-ctx b { color: var(--text-primary); }
+  .aluguel-ctx .dot { color: var(--text-tertiary); }
+
+  .aluguel-invalid { border-color: var(--danger) !important; box-shadow: 0 0 0 1px var(--danger); }
+  .ef-toggle-group.aluguel-invalid { border: 1px solid var(--danger); border-radius: 8px; padding: 2px; box-shadow: none; }
+  .aluguel-err-msg { color: var(--danger); font-size: 11px; margin-top: 5px; display:flex; align-items:center; gap:4px; }
+
+  .aluguel-exc-banner { background: linear-gradient(to right, #fffbeb, #fff); border: 1px solid #fde68a; border-left: 4px solid var(--warning); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; font-size: 13px; line-height: 1.6; color: #78350f; }
+  .aluguel-exc-banner strong { color: #78350f; }
+  .aluguel-exc-banner ul { margin: 10px 0 0 18px; padding: 0; font-size: 12.5px; }
+  .aluguel-exc-banner ul li { margin-bottom: 3px; }
+
+  .aluguel-ded-toggle { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:500; color: var(--brand-pink); background:none; border:none; cursor:pointer; padding:0; margin-top:4px; }
+
+  .aluguel-upload-mini { border:2px dashed var(--border-strong); border-radius:10px; padding:14px; text-align:center; background:var(--surface-subtle); cursor:pointer; transition:all .15s; }
+  .aluguel-upload-mini:hover { border-color:var(--brand-pink); background:var(--brand-pink-soft); }
+
+  .aluguel-footer { border-top:1px solid var(--border); margin-top:8px; padding-top:18px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  .aluguel-footer .hint { font-size:12px; color:var(--text-tertiary); }
+  .aluguel-footer .hint b { color: var(--brand-pink); }
+</style>
+</head>
+<body>
+<script>
+window.FLOW_CONFIG = {
+  module: 'fiscal',
+  entryScreen: 'task',
+  entryTaskId: 'FIS-8821',
+
+  operacaoLabel: 'Despesa de Aluguel (IRRF sobre Aluguel)',
+  typeCode: 'despesa_aluguel',
+  TYPE_METADATA: {
+    despesa_aluguel: {
+      icon: 'home',
+      label: 'Despesa de Aluguel',
+      desc: 'Solicitação mensal de despesa de aluguel pago a locador PF, para cálculo do IRRF (R-4010).',
+      color: '#f25461',
+    },
+  },
+  FORM_TABS_BY_TYPE: {
+    despesa_aluguel: [{ id: 'solicitacao', label: 'Solicitação' }],
+  },
+  renderFormTab(tabId, abaData) {
+    if (tabId === 'solicitacao') return renderAluguelSolicitacao();
+    return '';
+  },
+
+  getInitialState() {
+    return {
+      queue: [
+        {
+          id: 'FIS-8821',
+          type: 'Despesa de Aluguel',
+          typeCode: 'despesa_aluguel',
+          flowHref: 'fiscal-despesa-aluguel.html',
+          clientName: 'Estúdio Craft Marcenaria Ltda',
+          clientFantasy: 'Craft Marcenaria',
+          cnpj: '41.223.087/0001-52',
+          logoText: 'EC',
+          sla: '6h',
+          slaStatus: 'normal',
+          receivedAt: '09:00',
+          clientMessage: '',
+          senderName: 'Autopilot · Motor Fiscal SN',
+          senderScopes: [],
+          origin: 'autopilot',
+          attachments: [],
+          competencia: 'Agosto/2026',
+          dataDisparo: '01/09/2026',
+          prazoInterno: '10/09/2026',
+          formData: { abas: { solicitacao: {} } },
+        },
+        {
+          id: 'FIS-8799',
+          type: 'Despesa de Aluguel',
+          typeCode: 'despesa_aluguel',
+          flowHref: 'fiscal-despesa-aluguel.html',
+          clientName: 'Vinheria Alta Serra Comércio de Bebidas Ltda',
+          clientFantasy: 'Vinheria Alta Serra',
+          cnpj: '29.887.410/0001-16',
+          logoText: 'VA',
+          sla: '3h',
+          slaStatus: 'risk',
+          receivedAt: '09:00',
+          clientMessage: '',
+          senderName: 'Autopilot · Motor Fiscal SN',
+          senderScopes: [],
+          origin: 'autopilot',
+          attachments: [],
+          competencia: 'Agosto/2026',
+          dataDisparo: '01/09/2026',
+          prazoInterno: '10/09/2026',
+          formData: { abas: { solicitacao: {} } },
+        },
+        {
+          id: 'FIS-8774',
+          type: 'Despesa de Aluguel',
+          typeCode: 'despesa_aluguel',
+          flowHref: 'fiscal-despesa-aluguel.html',
+          clientName: 'Konoha Studio Design Ltda',
+          clientFantasy: 'Konoha Studio',
+          cnpj: '12.998.743/0001-20',
+          logoText: 'KS',
+          sla: '2h',
+          slaStatus: 'overdue',
+          receivedAt: 'ontem · 09:00',
+          clientMessage: '',
+          senderName: 'Autopilot · Motor Fiscal SN',
+          senderScopes: [],
+          origin: 'autopilot',
+          attachments: [],
+          competencia: 'Agosto/2026',
+          dataDisparo: '01/09/2026',
+          prazoInterno: '10/09/2026',
+          formData: { abas: { solicitacao: {} } },
+        },
+      ],
+    };
+  },
+};
+
+/* ═══════════════════════════════════════════════════════════
+   FLUXO: Solicitação de Despesa de Aluguel — funções sufixadas
+   "Aluguel" para não colidir com os globais do core.
+   ═══════════════════════════════════════════════════════════ */
+
+const _aluguelDraft = {};
+const _aluguelErrors = {};
+
+function _aluguelTaskId() { return state.currentTaskId; }
+function aluguelDraft(id) {
+  id = id || _aluguelTaskId();
+  if (!_aluguelDraft[id]) _aluguelDraft[id] = { mostrarDeducoes: false };
+  return _aluguelDraft[id];
+}
+
+function aluguelSetText(field, el) {
+  aluguelDraft()[field] = el.value;
+  aluguelClearErr(field, el);
+}
+
+function aluguelToggle(field, value) {
+  aluguelDraft()[field] = value;
+  aluguelClearErr(field);
+  switchFormTab('solicitacao');
+}
+
+function aluguelClearErr(field, el) {
+  const id = _aluguelTaskId();
+  if (_aluguelErrors[id]) delete _aluguelErrors[id][field];
+  if (el) el.classList.remove('aluguel-invalid');
+  const m = document.getElementById('aluguel-err-' + field);
+  if (m) m.remove();
+}
+
+function aluguelToggleDeducoes() {
+  const d = aluguelDraft();
+  d.mostrarDeducoes = !d.mostrarDeducoes;
+  switchFormTab('solicitacao');
+}
+
+function aluguelFileSelected(field, input) {
+  const f = input.files[0];
+  if (!f) return;
+  const sizeKB = (f.size / 1024).toFixed(0);
+  aluguelDraft()[field] = { name: f.name, size: sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) + ' MB' : sizeKB + ' KB' };
+  switchFormTab('solicitacao');
+}
+function aluguelRemoveFile(field) {
+  delete aluguelDraft()[field];
+  switchFormTab('solicitacao');
+}
+
+/* ---- helpers de campo (equivalentes aos ef* do core, mas ligados ao
+   estado próprio deste fluxo em vez do sistema de edição do core) ---- */
+function aluguelField(label, field, opts) {
+  opts = opts || {};
+  const d = aluguelDraft();
+  const err = (_aluguelErrors[_aluguelTaskId()] || {})[field];
+  const val = d[field] || '';
+  const cls = 'ef-input' + (err ? ' aluguel-invalid' : '');
+  let inputHtml;
+  if (opts.type === 'currency') {
+    inputHtml = `<div style="position:relative;"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-secondary);">R$</span><input class="${cls}" style="padding-left:28px;" type="text" inputmode="decimal" placeholder="0,00" value="${esc(val)}" oninput="aluguelSetText('${field}',this)"/></div>`;
+  } else if (opts.type === 'date') {
+    inputHtml = `<input class="${cls}" type="text" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" value="${esc(val)}" oninput="aluguelMaskDate(this); aluguelSetText('${field}',this)"/>`;
+  } else {
+    inputHtml = `<input class="${cls}" type="text" placeholder="${esc(opts.placeholder || '')}" value="${esc(val)}" oninput="aluguelSetText('${field}',this)"/>`;
+  }
+  return `<div class="ef-field"><div class="ef-label">${label}${opts.required ? ' <span style="color:var(--brand-pink);">*</span>' : ''}</div>${inputHtml}${err ? `<div class="aluguel-err-msg" id="aluguel-err-${field}"><i data-lucide="alert-circle" style="width:11px;height:11px;"></i>Campo obrigatório.</div>` : ''}</div>`;
+}
+
+function aluguelMaskDate(el) {
+  let v = el.value.replace(/\D/g, '').slice(0, 8);
+  if (v.length >= 5) v = v.slice(0, 2) + '/' + v.slice(2, 4) + '/' + v.slice(4);
+  else if (v.length >= 3) v = v.slice(0, 2) + '/' + v.slice(2);
+  el.value = v;
+}
+
+function aluguelToggleField(label, field, options, required) {
+  const d = aluguelDraft();
+  const err = (_aluguelErrors[_aluguelTaskId()] || {})[field];
+  const val = d[field] || '';
+  const btns = options.map(o => `<button type="button" class="ef-toggle-btn ${o === val ? 'active' : ''}" onclick="aluguelToggle('${field}','${o}')">${o}</button>`).join('');
+  return `<div class="ef-field"><div class="ef-label">${label}${required ? ' <span style="color:var(--brand-pink);">*</span>' : ''}</div><div class="ef-toggle-group${err ? ' aluguel-invalid' : ''}">${btns}</div>${err ? `<div class="aluguel-err-msg" id="aluguel-err-${field}"><i data-lucide="alert-circle" style="width:11px;height:11px;"></i>Campo obrigatório.</div>` : ''}</div>`;
+}
+
+function aluguelUploadField(label, field) {
+  const d = aluguelDraft();
+  const file = d[field];
+  if (file) {
+    return `<div><div class="ef-label" style="margin-bottom:8px;">${label}</div>${renderFileItem(file, { removable: true, removeFn: `aluguelRemoveFile('${field}')` })}</div>`;
+  }
+  return `<div><div class="ef-label" style="margin-bottom:8px;">${label}</div>
+    <div class="aluguel-upload-mini" onclick="document.getElementById('aluguel-file-${field}').click()">
+      <i data-lucide="upload-cloud" style="width:18px;height:18px;color:var(--brand-pink);"></i>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">Arraste ou <strong style="color:var(--brand-pink);">selecione</strong></div>
+    </div>
+    <input type="file" id="aluguel-file-${field}" style="display:none" onchange="aluguelFileSelected('${field}',this)"/>
+  </div>`;
+}
+
+function renderAluguelSolicitacao() {
+  const task = getTaskById(state.currentTaskId);
+  if (!task) return '';
+  const d = aluguelDraft(task.id);
+  const residente = d.residente || '';
+  const naoResidente = residente === 'Não';
+
+  let html = `
+    <div class="aluguel-ctx">
+      <i data-lucide="calendar-clock" style="width:14px;height:14px;color:var(--text-tertiary);"></i>
+      <span>Competência <b>${esc(task.competencia || '—')}</b></span>
+      <span class="dot">·</span>
+      <span>Disparada em <b>${esc(task.dataDisparo || '—')}</b></span>
+      <span class="dot">·</span>
+      <span>Prazo interno de preenchimento: <b>${esc(task.prazoInterno || '—')}</b></span>
+    </div>
+
+    <div class="subsection-title">Locador</div>
+    <div class="field-group field-group-3">
+      ${aluguelToggleField('Locador é residente no Brasil?', 'residente', ['Sim', 'Não'], true)}
+      ${aluguelField('CPF do locador', 'cpfLocador', { required: true, placeholder: '000.000.000-00' })}
+      ${aluguelField('Nome do locador', 'nomeLocador', { required: true, placeholder: 'Nome completo' })}
+    </div>
+  `;
+
+  if (naoResidente) {
+    html += `
+      <div class="aluguel-exc-banner">
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <i data-lucide="alert-triangle" style="width:16px;height:16px;flex-shrink:0;margin-top:1px;"></i>
+          <div>
+            <strong>Locador não residente no Brasil — o motor não retém.</strong> O dever de reter o IRRF é do procurador do locador no Brasil (RIR/2018, art. 781, I) — mesmo quando o próprio cliente é o procurador. A despesa será registrada pelo <strong>valor integral</strong>, sem gerar o evento R-4010, e uma <strong>anomalia será aberta</strong> para tratativa humana.
+            <ul>
+              <li>Retenção definitiva de 15% sobre o rendimento tributável (25% se país com tributação favorecida)</li>
+              <li>Sem tabela progressiva, sem redutor e sem faixa de isenção</li>
+              <li>Recolhimento no próprio dia do pagamento, em DARF 9478</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="subsection-title">País e procurador <span style="text-transform:none;font-weight:400;color:var(--text-tertiary);">(quando conhecidos)</span></div>
+      <div class="field-group field-group-2">
+        ${aluguelField('País de residência', 'paisResidencia', { placeholder: 'Ex.: Portugal' })}
+        ${aluguelField('Procurador designado no Brasil', 'procuradorDesignado', { placeholder: 'Nome do procurador' })}
+      </div>
+    `;
+  }
+
+  html += `
+    <div class="subsection-title">Pagamento</div>
+    <div class="field-group field-group-3">
+      ${aluguelField('Data do pagamento', 'dataPagamento', { required: true, type: 'date' })}
+      ${aluguelField('Valor bruto pago no mês', 'valorBruto', { required: true, type: 'currency' })}
+      ${!naoResidente ? aluguelToggleField('Pagamento via imobiliária/procurador?', 'viaImob', ['Sim', 'Não'], true) : ''}
+    </div>
+  `;
+
+  if (!naoResidente && d.viaImob === 'Sim') {
+    html += `
+      <div class="field-group field-group-2" style="margin-top:-4px;">
+        ${aluguelField('Nome da imobiliária/procurador', 'nomeImob', { required: true, placeholder: 'Razão social ou nome' })}
+      </div>
+      <div style="font-size:11.5px;color:var(--text-tertiary);margin-top:-8px;margin-bottom:4px;">Muda a data considerada como fato gerador quando o repasse é feito por intermediário (art. 31, §2º).</div>
+    `;
+  }
+
+  if (!naoResidente) {
+    html += `<div class="subsection-title">Deduções <span style="text-transform:none;font-weight:400;color:var(--text-tertiary);">(opcional)</span></div>`;
+    if (!d.mostrarDeducoes) {
+      html += `<button type="button" class="aluguel-ded-toggle" onclick="aluguelToggleDeducoes()"><i data-lucide="plus-circle" style="width:14px;height:14px;"></i>Adicionar deduções (IPTU, condomínio, cobrança, sublocação)</button>`;
+    } else {
+      html += `
+        <div class="field-group">
+          ${aluguelField('IPTU', 'dedIptu', { type: 'currency' })}
+          ${aluguelField('Condomínio', 'dedCondominio', { type: 'currency' })}
+          ${aluguelField('Taxa de cobrança/administração', 'dedCobranca', { type: 'currency' })}
+          ${aluguelField('Sublocação', 'dedSublocacao', { type: 'currency' })}
+        </div>
+        <div style="font-size:11.5px;color:var(--text-tertiary);margin-top:-4px;">Reduzem o rendimento tributável apenas quando o ônus foi do locador (RN-11).</div>
+        <button type="button" class="aluguel-ded-toggle" onclick="aluguelToggleDeducoes()" style="margin-top:10px;"><i data-lucide="minus-circle" style="width:14px;height:14px;"></i>Ocultar deduções</button>
+      `;
+    }
+  }
+
+  html += `
+    <div class="subsection-title">Anexos <span style="text-transform:none;font-weight:400;color:var(--text-tertiary);">(opcional — apoio e auditoria)</span></div>
+    <div class="field-group field-group-2">
+      ${aluguelUploadField('Recibo de locação', 'recibo')}
+      ${aluguelUploadField('Comprovante de pagamento', 'comprovante')}
+    </div>
+    <div style="font-size:11.5px;color:var(--text-tertiary);margin-top:2px;">Ausência de recibo ou comprovante não bloqueia o envio — apenas gera um alerta de auditoria não bloqueante (RN-07).</div>
+
+    <div class="aluguel-footer">
+      <div class="hint">Campos com <b>*</b> são obrigatórios — em branco, bloqueiam o envio (RN-07).</div>
+      <button class="btn btn-primary btn-lg" onclick="enviarSolicitacaoAluguel()"><i data-lucide="send" class="w-4 h-4"></i>Enviar solicitação</button>
+    </div>
+  `;
+
+  return html;
+}
+
+function aluguelValidate(taskId) {
+  const d = aluguelDraft(taskId);
+  const errs = {};
+  if (!d.residente) errs.residente = true;
+  if (!d.cpfLocador) errs.cpfLocador = true;
+  if (!d.nomeLocador) errs.nomeLocador = true;
+  if (!d.dataPagamento) errs.dataPagamento = true;
+  if (!d.valorBruto) errs.valorBruto = true;
+  if (d.residente === 'Sim') {
+    if (!d.viaImob) errs.viaImob = true;
+    if (d.viaImob === 'Sim' && !d.nomeImob) errs.nomeImob = true;
+  }
+  _aluguelErrors[taskId] = errs;
+  return Object.keys(errs).length === 0;
+}
+
+function fmtCurrencyAluguel(v) {
+  if (!v) return '—';
+  const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.'));
+  if (isNaN(n)) return 'R$ ' + v;
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function enviarSolicitacaoAluguel() {
+  const task = getTaskById(state.currentTaskId);
+  if (!task) return;
+  const taskId = task.id;
+
+  if (!aluguelValidate(taskId)) {
+    switchFormTab('solicitacao');
+    showAlertModal({ title: 'Campos obrigatórios pendentes', message: 'Preencha todos os campos marcados em vermelho antes de enviar. Campo obrigatório em branco bloqueia o envio (RN-07).' });
+    return;
+  }
+
+  const d = aluguelDraft(taskId);
+  const semAnexos = !d.recibo && !d.comprovante;
+
+  const completedTask = { ...task, completedAt: 'agora mesmo' };
+  state.completed.push(completedTask);
+  state.active = null;
+  state.queue = state.queue.filter(t => t.id !== taskId);
+  state.stationed = state.stationed.filter(t => t.id !== taskId);
+
+  renderSuccessAluguel(task, d, semAnexos);
+  showScreen('success');
+}
+
+function renderSuccessAluguel(task, d, semAnexos) {
+  const isNaoResidente = d.residente === 'Não';
+  const heroEl = qs('.success-hero');
+  const heroTitle = qs('.success-hero h1');
+  const heroIconCircle = qs('.success-hero .icon-circle');
+
+  if (isNaoResidente) {
+    heroEl.style.background = 'linear-gradient(135deg, #fef3c7, #fffbeb)';
+    heroEl.style.borderColor = '#fcd34d';
+    heroTitle.textContent = 'Despesa registrada — anomalia aberta';
+    heroTitle.style.color = '#92400e';
+    heroIconCircle.style.background = 'var(--warning)';
+    heroIconCircle.innerHTML = '<i data-lucide="alert-triangle" style="width:36px;height:36px;"></i>';
+  } else {
+    heroEl.style.background = '';
+    heroEl.style.borderColor = '';
+    heroTitle.textContent = 'Solicitação enviada ao Motor Fiscal SN';
+    heroTitle.style.color = '';
+    heroIconCircle.style.background = '';
+    heroIconCircle.innerHTML = '<i data-lucide="check" style="width:36px;height:36px;"></i>';
+  }
+
+  const rows = [];
+  rows.push(['Empresa', task.clientName]);
+  rows.push(['CNPJ', task.cnpj]);
+  rows.push(['Competência', task.competencia || '—']);
+  rows.push(['Locador', (d.nomeLocador || '—') + ' · CPF ' + (d.cpfLocador || '—')]);
+  rows.push(['Residente no Brasil', d.residente || '—']);
+  if (isNaoResidente) {
+    rows.push(['País de residência', d.paisResidencia || 'Não informado']);
+    rows.push(['Procurador designado', d.procuradorDesignado || 'Não informado']);
+  }
+  rows.push(['Data do pagamento', d.dataPagamento || '—']);
+  rows.push(['Valor bruto', fmtCurrencyAluguel(d.valorBruto)]);
+  if (!isNaoResidente) {
+    const totalDed = ['dedIptu', 'dedCondominio', 'dedCobranca', 'dedSublocacao']
+      .reduce((s, k) => s + (parseFloat(String(d[k] || '0').replace(/\./g, '').replace(',', '.')) || 0), 0);
+    rows.push(['Deduções informadas', totalDed ? fmtCurrencyAluguel(totalDed) : 'Nenhuma']);
+    rows.push(['Pagamento via imobiliária/procurador', d.viaImob + (d.viaImob === 'Sim' ? ' · ' + (d.nomeImob || '—') : '')]);
+  }
+  rows.push(['Operador(a)', OPERATOR_NAME]);
+  rows.push(['Enviado em', 'hoje às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })]);
+  rows.push(['Tarefa', '#' + task.id]);
+
+  qs('#success-summary').innerHTML = rows.map(([l, v]) => `<div class="summary-row"><span class="summary-label">${esc(l)}</span><span class="summary-value">${esc(String(v))}</span></div>`).join('');
+
+  const noteId = 'aluguel-success-note';
+  let note = document.getElementById(noteId);
+  if (note) note.remove();
+  if (isNaoResidente || semAnexos) {
+    note = document.createElement('div');
+    note.id = noteId;
+    note.style.marginBottom = '20px';
+    if (isNaoResidente) {
+      note.innerHTML = `<div class="alert-banner" style="border-left-color:var(--warning);background:linear-gradient(to right,#fffbeb,#fff);">
+        <i data-lucide="alert-triangle" style="width:16px;height:16px;color:var(--warning);flex-shrink:0;"></i>
+        <div style="font-size:13px;line-height:1.6;color:#78350f;"><strong>Retenção não realizada pelo motor.</strong> A responsabilidade é do procurador do locador no Brasil. Despesa registrada pelo valor integral; a anomalia foi encaminhada para tratativa humana.</div>
+      </div>`;
+    } else {
+      note.innerHTML = `<div class="alert-banner">
+        <i data-lucide="info" style="width:16px;height:16px;color:var(--brand-pink);flex-shrink:0;"></i>
+        <div style="font-size:13px;line-height:1.6;"><strong>Alerta de auditoria (não bloqueante):</strong> recibo e comprovante não foram anexados. O envio seguiu normalmente, mas o registro fica sinalizado para revisão.</div>
+      </div>`;
+    }
+    const summaryEl = qs('#success-summary');
+    summaryEl.parentNode.insertBefore(note, summaryEl);
+  }
+  refreshIcons();
+}
+</script>
+<!-- Ordem fixa, sempre a mesma, cockpit-07 (init) sempre por último -->
+<script src="core/cockpit-01-shell.js"></script>
+<script src="core/cockpit-02-state-helpers.js"></script>
+<script src="core/cockpit-03-queue-home.js"></script>
+<script src="core/cockpit-04-task-detail.js"></script>
+<script src="core/cockpit-05-timeline-actions.js"></script>
+<script src="core/cockpit-06-execution.js"></script>
+<script src="core/cockpit-08-datatable.js"></script>
+<script src="core/cockpit-07-modals-init.js"></script>
+</body>
+</html>
