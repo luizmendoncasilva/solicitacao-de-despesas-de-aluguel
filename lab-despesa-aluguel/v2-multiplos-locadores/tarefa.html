@@ -263,6 +263,7 @@
   .container-wide #form-collab-strip { display: block !important; }
   .container-wide #attachments-block { display: block !important; }
 </style>
+<style>#hub-link { display: none !important; } /* não há menu de protótipos: o fluxo é uma tela só */</style>
 </head>
 <body>
 <script>
@@ -308,7 +309,7 @@ function labCampoEditavel(tab, secao, campo, valor) {
    de outra — pra criar uma v2, copie a pasta inteira e mexa à vontade.
    Compartilhado na raiz do lab: o dado (../dados.js, ../tarefas.js). O formulário
    (./aluguel.js) é desta versão.
-   Esta tela é a entrada do fluxo: o menu de protótipos (../../index.html) abre direto aqui.
+   Esta tela é a entrada do fluxo: a raiz do repositório abre direto aqui.
    ------------------------------------------------------------------------------
    Regras que esta versão materializa:
    1. Ver É entrar: a linha do painel abre esta tela, não um modal.
@@ -350,8 +351,8 @@ const _lab = { t: null, lancAberto: {}, rascunho: {}, anexos: {}, expandido: {},
 
 /* ---------- a tarefa ---------- */
 function labId() { return new URLSearchParams(location.search).get('id') || ''; }
-// O fluxo é uma tela só: "Voltar" leva ao menu de protótipos.
-function labVoltarHref() { return '../../index.html'; }
+// O fluxo é uma tela só: não há para onde voltar.
+function labVoltarHref() { return location.pathname + location.search; }
 
 // Três tipos (mapa de unificacao-acompanhamento.md): cliente/Hub · HITL (robô→pessoa) · robô.
 function labTipo(t) {
@@ -839,8 +840,7 @@ function labHeader(t) {
   const op = acOp(t.operatorId);
   const isAP = labEhAutopilot(t);
 
-  const bc = [`<a href="${labVoltarHref()}" style="color:inherit;text-decoration:none;" class="cursor-pointer hover:text-rose-500">← Voltar</a>`];
-  bc.push(`<span>${esc(labFaseAtual(t))}</span>`);
+  const bc = [`<span>${esc(labFaseAtual(t))}</span>`];
 
   const tags = isAP
     ? `<span class="contact-tag">robô</span>`
@@ -2299,7 +2299,6 @@ function labMount() {
   labRoteiro(t).forEach((p, i) => { if (p.nasceAberto) _lab.expandido[i] = true; });
   labRender();
   // Selo do canto: diz em que versão você está e volta pro índice das versões.
-  document.body.insertAdjacentHTML('beforeend', `<a class="lab-flag" href="../../index.html" title="Voltar ao menu de protótipos">laboratório · despesa de aluguel · ${LAB_VERSAO_LABEL}</a>`);
 }
 
 document.addEventListener('keydown', (e) => {
