@@ -1,0 +1,2314 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>Despesa de aluguel · laboratório · Cockpit</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../operador-ui.css" />
+<style>
+  /* ── O que é novo nesta tela (o resto vem do núcleo + operador-ui.css) ───────
+     1. .exec-step.failed — estado NOVO do passo: falhou. Espelha o .exec-step.done
+        trocando o verde pelo --danger (mesmo padrão, cor do erro).
+     2. .step-ev-btn / .step-alerta — a linha de baixo do passo: o botão que abre os eventos
+        no painel lateral (mesmo objeto dos de Histórico e Conversa), com a contagem, o balão
+        de comentários e o alerta de falha. Ao lado dele, .step-hist/.step-chev: a seta que
+        abre o CORPO do passo, disclosure puro e sem caixa.
+     3. .step-status / .step-when — a coluna da direita: tag e, sob ela, o horário.
+     4. .lab-try-lista — a lista de eventos (e seus comentários), dentro do painel lateral.
+     5. .lab-fim — a divisória com selo que fecha o roteiro de um processo concluído.
+     6. .lab-drawer — o painel lateral: Conversa, Histórico e eventos do passo.
+     7. .lab-grupo — título de macroetapa dentro do roteiro (só o Autopilot agrupa). */
+
+  .exec-step.failed { border-color: var(--danger); background: linear-gradient(to right, #fef2f2, #fff); }
+  .exec-step.failed .step-num { background: var(--danger); color: #fff; }
+  .exec-step .step-espera { font-size: 11px; color: var(--text-tertiary); }
+  .exec-step .step-num svg { width: 15px; height: 15px; stroke-width: 2.75; }
+  .exec-step .step-num.pend::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); opacity: 0.6; }
+  .exec-step.active .step-num.pend::after { background: #fff; opacity: 1; }
+
+  .lab-grupo { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); margin: 18px 0 8px; }
+  .lab-grupo:first-child { margin-top: 0; }
+
+  /* Corpo do passo: uma peça embaixo da outra, com respiro. */
+  .exec-step .step-corpo { display: flex; flex-direction: column; gap: 14px; }
+
+  .lab-try-lista { display: flex; flex-direction: column; gap: 20px; }
+  .lab-try { display: flex; gap: 9px; align-items: flex-start; }
+  .lab-try > i, .lab-try > svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; stroke-width: 2.25; }
+  .lab-try.ok > i, .lab-try.ok > svg { color: var(--success); stroke: var(--success); }
+  .lab-try.erro > i, .lab-try.erro > svg { color: var(--danger); stroke: var(--danger); }
+  .lab-titulo-hora { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .lab-try-text { font-size: 13.5px; color: var(--text-primary); line-height: 1.4; }
+  .lab-try-when { font-size: 11.5px; color: var(--text-tertiary); }
+  .lab-try-quem { font-size: 11.5px; color: var(--text-tertiary); margin-top: 6px; }
+  .ta-err { margin-top: 8px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 9px; padding: 10px 12px; }
+  .ta-err-text { font-size: 12.5px; color: var(--text-primary); line-height: 1.55; }
+
+  .exec-step .step-side { display: flex; flex-direction: column; align-items: flex-end; align-self: stretch; gap: 9px; flex-shrink: 0; }
+  /* min-height: sem ela, passo com aviso fica 3px mais alto que passo sem — e a lista
+     inteira perde o ritmo por causa do ícone do chip. */
+  .exec-step .step-hist-row { display: flex; align-items: center; gap: 9px; min-height: 20px; }
+  .exec-step .step-chev-row { display: flex; justify-content: flex-end; margin-top: auto; }
+  .step-sep { width: 1px; height: 13px; background: var(--border-strong); flex-shrink: 0; }
+  .exec-step .step-hist { display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: none; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); cursor: pointer; white-space: nowrap; }
+  .exec-step .step-hist:hover { color: var(--brand-blue); }
+  .exec-step .step-hist.open { color: var(--brand-blue); }
+  .exec-step .step-hist .ex-chev { transition: transform .18s; flex-shrink: 0; }
+  .exec-step .step-hist.open .ex-chev { transform: rotate(180deg); }
+  .step-ev-btn { padding: 5px 10px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+  .step-ev-btn .step-ev-cmt { display: inline-flex; align-items: center; gap: 3px; color: var(--text-tertiary); font-weight: 500; }
+  .step-ev-btn .step-ev-cmt svg { width: 13px; height: 13px; }
+  /* PASSO TRAVADO: o botão inteiro fica vermelho. Até 13/08 a lista de eventos nascia aberta no
+     passo travado, porque a causa da parada é o que a pessoa abriu a tarefa pra ler. Com os
+     eventos no painel, nada abre sozinho (decisão do Rodrigo) — então o que chama é o botão. */
+  .step-ev-btn.viva { border-color: var(--danger); color: var(--danger); }
+  .step-ev-btn.viva:hover { border-color: var(--danger); color: var(--danger); background: #fef2f2; }
+  .step-alerta { display: inline-flex; align-items: center; margin-right: -1px; }
+  .step-alerta svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .step-alerta.viva svg { color: var(--danger); stroke: var(--danger); }
+  .step-alerta.velha svg { color: #d97706; stroke: #d97706; }
+  /* Comentar = balão com "+", dentro de cada evento (nunca no passo). Sem prefixo de `.exec-step`
+     desde 13/08: o evento mudou de casa e agora mora no painel lateral. */
+  .step-cmt { display: inline-flex; align-items: center; justify-content: center; padding: 0; background: none; border: none; color: var(--text-tertiary); cursor: pointer; }
+  .step-cmt svg { width: 16px; height: 16px; }
+  .step-cmt:hover { color: var(--brand-pink); }
+
+  /* Linha 1 da direita: o horário à ESQUERDA da tag de estado. min-height porque "Em
+     andamento" e "Aguardando" são texto puro e ficariam mais baixos que a badge "Feito",
+     deixando o passo ativo desalinhado dos outros. */
+  .exec-step .step-status { display: flex; align-items: center; gap: 10px; flex-shrink: 0; min-height: 22px; }
+  .exec-step .step-when { font-size: 11.5px; color: var(--text-tertiary); white-space: nowrap; }
+
+  /* Fim do roteiro: NÃO é um card. Uma divisória atravessa o fim da lista com o selo no
+     meio dela — o único elemento do roteiro que não tem caixa, então não se confunde com
+     passo nenhum. (A tela de "Tarefa finalizada" centralizada é pra quem ACABOU de
+     finalizar; aqui é registro de um processo que já fechou.)
+     O contraste vem da COR do texto, não de fundo: verde forte e negrito, porque cinza
+     claro sobre branco desaparece no monitor do operador. */
+  .lab-fim { margin-top: 22px; text-align: center; }
+  .lab-fim-linha { display: flex; align-items: center; gap: 16px; }
+  .lab-fim-linha::before, .lab-fim-linha::after { content: ''; flex: 1; height: 1px; background: var(--border-strong); }
+  .lab-fim-selo { display: inline-flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 700; color: var(--success); white-space: nowrap; }
+  .lab-fim-selo svg { width: 18px; height: 18px; stroke: var(--success); stroke-width: 2.25; flex-shrink: 0; }
+  .lab-fim-sub { font-size: 12.5px; color: var(--text-secondary); margin-top: 7px; }
+  /* Arquivos e destino dentro do passo. O rótulo é o MESMO dos dados da solicitação (11px,
+     caixa alta, tercário) pra não nascer um terceiro jeito de intitular bloco. Os chips são
+     os .material-chip do núcleo, sem variante nova. */
+  .lab-bl-label { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 10px; }
+  .lab-arqs { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* A pasta usa o .material-chip dos arquivos. Só duas diferenças: é clicável inteira e o
+     ícone tem o peso do texto (a pasta é o destino do passo, não um anexo qualquer). */
+  .lab-chip-pasta { cursor: pointer; }
+  .lab-chip-pasta > svg { color: var(--text-secondary); stroke: var(--text-secondary); }
+  .lab-chip-pasta .material-chip-name { font-weight: 600; }
+  /* Fala de gente (comentário) — avatar + nome + texto, sem caixa. O avatar carrega o "isto
+     é alguém falando"; a caixa em volta era peso sem função. */
+  .lab-av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #f25461, #f97316); color: #fff; font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; letter-spacing: 0.02em; }
+  .lab-fala { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+  .lab-fala:last-child { margin-bottom: 0; }
+  .lab-fala-who { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .lab-fala-when { font-size: 10.5px; color: var(--text-tertiary); margin-left: 7px; font-weight: 400; }
+  .lab-fala-text { font-size: 12.5px; color: var(--text-primary); line-height: 1.55; margin-top: 2px; }
+
+  /* Campo de comentar COMPACTO: uma linha que cresce, e o botão de enviar só aparece com
+     texto. Era um card com rodapé próprio, textarea de 62px e dois botões — peso de
+     formulário pra uma anotação de uma frase. */
+  .lab-cmt-box { border-top: 1px solid var(--border); padding: 11px 14px; background: var(--surface-subtle); }
+  .lab-cmt-form { display: flex; align-items: flex-start; gap: 10px; }
+  /* Aviso fixo de que o comentário é interno. Recuo alinha com o texto do campo (avatar 26 +
+     gap 10) pra ler como legenda dele, não como item novo. */
+  .lab-cmt-hint { display: flex; align-items: center; gap: 7px; margin-top: 5px; padding-left: 36px; font-size: 11px; color: var(--text-tertiary); }
+  .lab-cmt-hint svg { width: 12px; height: 12px; flex-shrink: 0; }
+  .lab-cmt-form textarea { flex: 1; min-width: 0; box-sizing: border-box; padding: 5px 2px; border: none; background: none; font-family: inherit; font-size: 12.5px; line-height: 1.5; resize: none; outline: none; overflow: hidden; color: var(--text-primary); }
+  .lab-cmt-form textarea::placeholder { color: var(--text-tertiary); }
+  /* Enviar: nasce escondido e some do fluxo; aparece quando há texto (a classe entra pelo
+     labRascunho, sem re-render, pra não perder o foco de quem está digitando). */
+  .lab-cmt-form .lab-cmt-send { width: 26px; height: 26px; border-radius: 50%; border: none; background: var(--brand-pink); color: #fff; display: none; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .lab-cmt-form .lab-cmt-send svg { width: 15px; height: 15px; stroke: #fff; stroke-width: 2.5; }
+  .lab-cmt-form .lab-cmt-send:hover { background: var(--brand-pink-hover); }
+  .lab-cmt-form.com-texto .lab-cmt-send { display: flex; }
+  .lab-cmt-clip { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: none; background: none; font-family: inherit; font-size: 11px; color: var(--text-tertiary); cursor: pointer; flex-shrink: 0; }
+  .lab-cmt-clip svg { width: 12px; height: 12px; }
+  .lab-cmt-clip:hover { color: var(--brand-pink); }
+  .lab-cmt-sep { width: 1px; height: 11px; background: var(--border-strong); flex-shrink: 0; }
+  .lab-cmt-arqs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; padding-left: 36px; }
+
+  .lab-try-head { display: flex; align-items: flex-start; gap: 10px; }
+  .lab-try-cmt { margin-top: 1px; }
+  .lab-fala-em-lanc { padding-left: 12px; border-left: 1px solid var(--border-strong); margin-top: 10px; }
+  .lab-cmt-box.em-lanc { padding: 0 0 0 12px; margin-top: 10px; border-top: none; border-left: 1px solid var(--border-strong); background: none; }
+  /* O CHIP DE ARQUIVO É O `material-chip` DO PROJETO, sem variante — o que faltava era ele poder
+     encolher. O componente declara `max-width: 100%`, mas o nome do arquivo é `nowrap` e não trunca,
+     então num painel de 460px ele empurrava os botões de ver/baixar pra fora da borda: o chip
+     aparecia partido e lia como se fosse outro componente. Aqui o nome corta com "…" e o chip
+     inteiro cabe, com a mesma cara que tem no resto do protótipo. */
+  .lab-drawer .material-chip { max-width: 100%; }
+  .lab-drawer .material-chip-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+  /* Painel lateral (Conversa · Histórico) — DESLIZA da direita, não empurra o roteiro.
+     A animação é de verdade: o fundo aparece e o painel entra da borda. Sem transição ele
+     "aparecia" seco e parecia bug de renderização. 240ms é o mesmo tempo dos dois lados
+     (abrir e fechar) — o labDrawerFechar espera esse tempo antes de remover do DOM. */
+  .lab-drawer-bd { position: fixed; inset: 0; background: rgba(15,15,15,0); z-index: 130; display: flex; justify-content: flex-end; transition: background .24s ease; }
+  .lab-drawer-bd.aberto { background: rgba(15,15,15,0.35); }
+  .lab-drawer { width: 460px; max-width: 92vw; background: var(--surface); height: 100%; display: flex; flex-direction: column; box-shadow: -8px 0 32px rgba(15,15,15,0.18); transform: translateX(100%); transition: transform .24s cubic-bezier(.22,.61,.36,1); }
+  .lab-drawer-bd.aberto .lab-drawer { transform: translateX(0); }
+  .lab-drawer-head { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; }
+  .lab-drawer-title { font-size: 15px; font-weight: 700; }
+  .lab-drawer-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .lab-drawer-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+  .lab-drawer-foot { border-top: 1px solid var(--border); padding: 14px 20px; background: var(--surface-subtle); }
+  .lab-drawer-foot textarea { width: 100%; box-sizing: border-box; min-height: 74px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 10px; font-family: inherit; font-size: 13px; resize: vertical; outline: none; }
+  .lab-drawer-nota { font-size: 12px; color: var(--text-tertiary); display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
+  /* Opção de colocar em espera + a consequência dela, no rodapé da Conversa. */
+  .lab-espera-opt { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12.5px; color: var(--text-primary); cursor: pointer; user-select: none; }
+  .lab-espera-opt input { width: 15px; height: 15px; accent-color: var(--brand-pink); cursor: pointer; flex-shrink: 0; }
+  .lab-espera-aviso { display: flex; align-items: flex-start; gap: 8px; margin-top: 9px; padding: 10px 12px; background: var(--warning-soft); border: 1px solid #f59e0b; border-radius: 9px; font-size: 12px; color: var(--warning); line-height: 1.5; }
+  .lab-espera-aviso svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
+  /* Botão de anexar — um desenho só pros dois lugares onde se manda arquivo pro cliente: o
+     passo de entrega e o rodapé da Conversa. */
+  .lab-anexar-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; background: #fff; border: 1px solid var(--border-strong); border-radius: 8px; font-family: inherit; font-size: 13px; font-weight: 500; color: var(--text-primary); cursor: pointer; }
+  .lab-anexar-btn:hover:not(:disabled) { border-color: var(--brand-blue); color: var(--brand-blue); }
+  /* Os dois abridores de painel andam juntos, no pé do módulo do topo e colados na direita:
+     Histórico (a ordem das coisas) e depois Conversa (falar sobre elas). */
+  .lab-head-acoes { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; align-self: flex-end; }
+  /* O card do topo se mede a si mesmo — não a janela. O que decide o empilhamento é a largura
+     REAL do card, que muda com o zoom do navegador, não só com o tamanho do monitor. */
+  .lab-topo { container-type: inline-size; container-name: labtopo; }
+  /* Card apertado: Histórico em cima, Conversa embaixo, largura igual pros dois e os ícones
+     alinhados numa coluna. O ponto é o mesmo em toda tarefa — não depende do tamanho do nome de
+     quem está com ela, que é o que faz a linha de atribuição quebrar em lugares diferentes. */
+  @container labtopo (width < 820px) {
+    .lab-head-acoes { flex-direction: column; align-items: stretch; }
+  }
+  .lab-conversa-btn { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; background: #fff; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 12.5px; font-weight: 500; color: var(--text-primary); cursor: pointer; white-space: nowrap; }
+  .lab-conversa-btn:hover { border-color: var(--brand-blue); color: var(--brand-blue); }
+  .lab-conversa-btn .lab-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-blue); flex-shrink: 0; }
+  .notif-btn .dot.lab-dot-msg, .notif-item .dot.lab-dot-msg { background: var(--brand-blue); }
+
+  /* Timeline do Hub, dentro do painel de Histórico: bolinha + linha + data/hora + conteúdo.
+     A linha nasce embaixo da bolinha e vai até o item seguinte; o último item não tem linha. */
+  .lab-tl-item { display: flex; gap: 12px; position: relative; padding-bottom: 20px; }
+  .lab-tl-item:last-child { padding-bottom: 0; }
+  .lab-tl-item:not(:last-child)::before { content: ''; position: absolute; left: 15px; top: 36px; bottom: 2px; width: 1px; background: var(--border-strong); }
+  .lab-tl-dot { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; z-index: 1; }
+  .lab-tl-dot svg { width: 15px; height: 15px; stroke-width: 2.25; }
+  .lab-tl-dot.escuro { background: #0a0a0a; } .lab-tl-dot.escuro svg { stroke: #fff; }
+  .lab-tl-dot.claro { background: #fff; border: 1px solid var(--border-strong); } .lab-tl-dot.claro svg { stroke: var(--text-secondary); }
+  .lab-tl-dot.azul { background: #2463eb; } .lab-tl-dot.azul svg { stroke: #fff; }
+  .lab-tl-dot.ambar { background: #f59e0b; } .lab-tl-dot.ambar svg { stroke: #fff; }
+  .lab-tl-dot.verde { background: #17a349; } .lab-tl-dot.verde svg { stroke: #fff; }
+  .lab-tl-dot.vermelho { background: var(--danger); } .lab-tl-dot.vermelho svg { stroke: #fff; }
+  /* Balão SÓLIDO só na bolinha escura (escritório) e VAZADO na clara (cliente) — é a diferença
+     que o Hub usa pra dizer de que lado veio a mensagem, e ela some se os dois forem preenchidos. */
+  .lab-tl-dot.escuro svg.lucide-message-square { fill: #fff; }
+  .lab-tl-dot.mini { background: transparent; }
+  .lab-tl-dot.mini::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--text-secondary); box-shadow: 0 0 0 3px #fff; }
+  .lab-tl-interno { font-size: 12.5px; color: var(--text-secondary); margin-top: 3px; line-height: 1.6; }
+  .lab-tl-tag { display: inline-block; margin-right: 7px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #5b6472; background: #f5f6f8; border: 1px solid #d7dae0; border-radius: 5px; padding: 1px 6px; vertical-align: 1px; }
+  .lab-tl-corpo { flex: 1; min-width: 0; padding-top: 1px; }
+  .lab-tl-when { font-size: 11.5px; color: var(--text-tertiary); }
+  .lab-tl-titulo { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lab-tl-quem { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-top: 3px; }
+  .lab-tl-escopo { font-size: 12px; font-weight: 400; color: var(--text-tertiary); margin-left: 7px; }
+  .lab-tl-chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+  .lab-tl-nota { font-size: 12.5px; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
+  .lab-tl-msg { background: var(--surface-subtle); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; margin-top: 8px; font-size: 12.5px; color: var(--text-primary); line-height: 1.55; }
+
+  .lab-tl-nav { cursor: pointer; }
+  .tl-item-h.lab-tl-nav:hover .tl-step { color: var(--brand-blue); }
+  .lab-tl-olhando .tl-dot { box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--brand-blue); }
+  /* O rótulo da etapa fica na cor de sempre: quem carrega a marca é o anel + esta legenda. */
+  .tl-item-h.lab-tl-olhando .tl-meta { color: var(--brand-blue); font-weight: 600; }
+
+  .container-wide .tl-dot-active { background: var(--brand-blue); box-shadow: 0 0 0 4px var(--brand-blue-soft); }
+  .container-wide .exec-step.active { border-color: var(--brand-blue); box-shadow: 0 0 0 3px var(--brand-blue-soft); }
+  .container-wide .exec-step.active .step-num { background: var(--brand-blue); }
+
+  /* .tl-item-h junto no seletor de propósito: o CSS do núcleo entra depois (é injetado em runtime)
+     e o `padding: 0 6px` dele zeraria o recuo do topo se a especificidade fosse igual. */
+  /* PONTAS DA RÉGUA: bolinha de 12px, menos da metade do dot de etapa (28px) — presença sem peso de
+     etapa. Os 8px acima e 16px abaixo somam os mesmos 36px que o dot grande + margem gastam, então
+     os rótulos das pontas e das etapas nascem na MESMA linha de base. O centro dela cai em 14px,
+     onde passa a régua. */
+  .lab-tl-marco .tl-marco-dot { width: 12px; height: 12px; border-radius: 50%; margin: 8px 0 16px; background: var(--border-strong); position: relative; z-index: 1; flex-shrink: 0; }
+  .lab-tl-marco .tl-marco-dot.feito { background: var(--success); }
+  /* A régua é calculada pro dot de 28px (18px do centro); junto da bolinha pequena isso deixava um
+     vão. Cada lado que encosta numa ponta encurta 7px. */
+  .container-wide .tl-item-h.lab-tl-marco:not(:last-child)::after { left: calc(50% + 11px); }
+  .container-wide .tl-item-h.lab-tl-antes-marco:not(:last-child)::after { right: calc(-50% + 11px); }
+  .container-wide .tl-item-h.active:not(:last-child)::after,
+  .container-wide .tl-item-h.warn:not(:last-child)::after { background: var(--border); }
+  .lab-tl-marco .tl-marco-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); line-height: 1.3; }
+  .lab-tl-marco.pending .tl-marco-label { color: var(--text-tertiary); font-weight: 500; }
+  .lab-tl-marco .tl-marco-when { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; line-height: 1.2; }
+
+  .lab-flag { position: fixed; left: 12px; bottom: 12px; z-index: 200; background: #141414; color: #fff; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 10px; border-radius: 6px; opacity: 0.85; text-decoration: none; }
+  .lab-flag:hover { opacity: 1; }
+  .lab-vazio { font-size: 13px; color: var(--text-secondary); }
+
+  /* O operador-ui.css foi escrito pras telas do Autopilot, onde não existe "solicitação do
+     cliente": ele esconde com !important tudo o que é dessa natureza — o cartão de decisão, as
+     abas do formulário, o botão Editar, a faixa do colaborador e o bloco de anexos. Nesta tela as
+     duas naturezas convivem (a Validação é de DP), então o esconde é desfeito peça por peça.
+     Escopo em .container-wide de propósito: vale só dentro do miolo desta tela. */
+  .container-wide .decision-card { display: block !important; }
+  .container-wide #form-tabs { display: inline-flex !important; }
+  .container-wide #form-edit-btn { display: block !important; }
+  .container-wide #form-collab-strip { display: block !important; }
+  .container-wide #attachments-block { display: block !important; }
+</style>
+</head>
+<body>
+<script>
+window.FLOW_CONFIG = {
+  TYPE_METADATA: {}, EXEC_STEPS: 'geral', FORM_TABS_BY_TYPE: {},
+  getInitialState() { return { queue: [], stationed: [], completed: [], messages: {}, notifications: [] }; },
+  renderFormTab(tabId, abaData) {
+    const editando = !!(state._editMode && state._editMode[state.currentTaskId]);
+    const secoes = Object.entries(abaData || {});
+    if (!secoes.length) return '<div class="lab-vazio">Esta aba não tem campos.</div>';
+    const html = secoes.map(([secao, campos]) => {
+      if (!campos || typeof campos !== 'object') return '';
+      const titulo = secao ? `<div class="subsection-title">${esc(secao)}</div>` : '';
+      const corpo = Object.entries(campos).map(([campo, valor]) =>
+        editando ? labCampoEditavel(tabId, secao, campo, valor) : roField(esc(campo), esc(valor || '—'))).join('');
+      return `${titulo}<div class="field-group" style="margin-bottom:24px;">${corpo}</div>`;
+    }).join('');
+    return editando ? html : injectCopyButtons(html);
+  },
+};
+// Um campo de cada tipo, escolhido pelo formato do valor — os MESMOS componentes dos fluxos
+// reais (efDate/efCurrency/efTextarea/efText), nada de input novo.
+function labCampoEditavel(tab, secao, campo, valor) {
+  const v = String(valor == null ? '' : valor);
+  const args = [esc(campo), v, tab, secao, campo];
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(v)) return efDate.apply(null, args);
+  if (/^R\$\s/.test(v)) return efCurrency.apply(null, args);
+  if (v.length > 70) return efTextarea.apply(null, args);
+  return efText.apply(null, args);
+}
+</script>
+<script src="../../dp-wizard.js"></script>
+<script src="../../cockpit-core.js"></script>
+<script src="../tarefas.js"></script>
+<script src="../dados.js"></script>
+<!-- O formulário da Despesa de aluguel desta versão: vários locadores. -->
+<script src="aluguel.js"></script>
+<script>
+/* ============================================================
+   LABORATÓRIO — v2 DESPESA DE ALUGUEL · MÚLTIPLOS LOCADORES · a tela da tarefa em tela cheia
+   ------------------------------------------------------------------------------
+   ESTA PASTA É UMA VERSÃO. O chassi mora aqui e nenhuma versão importa o chassi
+   de outra — pra criar uma v2, copie a pasta inteira e mexa à vontade.
+   Compartilhado na raiz do lab: o dado (../dados.js, ../tarefas.js). O formulário
+   (./aluguel.js) é desta versão.
+   Nada aqui toca o protótipo publicado: o painel de entrada é ../painel.html,
+   uma cópia que vive dentro do lab. Índice das versões: ../index.html
+   ------------------------------------------------------------------------------
+   Regras que esta versão materializa:
+   1. Ver É entrar: a linha do painel abre esta tela, não um modal.
+   2. Leitura é aberta; AÇÃO depende de posse. Não é sua → controles desativados
+      e um caminho só: "Atribuir a mim".
+   3. Linha de execução = ROTEIRO FIXO (os passos que faltam aparecem cinza),
+      igual pro DP e pro Autopilot.
+   4. Rastro de tentativas vive DENTRO do passo, no "Histórico" — que é também
+      onde se comenta (um affordance por passo).
+   5. As fases no topo são LEITURA. "Voltar aos dados da solicitação" é ação com confirmação.
+   6. Conversa com o cliente = painel lateral (não existe em tarefa do robô).
+   7. A tela ABRE NA ETAPA em que a tarefa está: em Dados da solicitação mostra os dados
+      a conferir (os mesmos blocos do fluxo de DP), em Processamento mostra o roteiro.
+   ============================================================ */
+
+// Identidade desta versão: o nome da pasta. Alimenta o "voltar" (que devolve ao
+// painel na mesma versão) e o selo do canto. Numa cópia, é a primeira linha a mudar.
+const LAB_VERSAO = 'v2-multiplos-locadores';
+const LAB_VERSAO_LABEL = 'v2 · múltiplos locadores';
+
+const LAB_EU = 'o1'; // eu = Daniele Ribeiro (o mesmo OPERATOR_NAME do núcleo)
+const LAB_FASES_ROBO = ['Execução iniciada', 'Processamento', 'Concluída'];
+const LAB_FASES_DP = ['Solicitação recebida', 'Dados da solicitação', 'Processamento', 'Concluída'];
+
+// aberto: quais passos estão com o bloco de eventos expandido · rascunho: o que já foi
+// digitado em cada campo de comentário (a tela re-renderiza a cada ação, não pode perder o
+// texto) · anexos: os arquivos já escolhidos naquele campo, pela mesma chave do rascunho.
+// lancAberto: qual campo de comentário de EVENTO está aberto ('passo.evento').
+// espera: a opção "colocar em espera" do rodapé da Conversa vem marcada (pedir algo ao
+// cliente é o motivo mais comum de escrever pra ele); quem só quer avisar desmarca.
+// vendo: índice da fase que estou OLHANDO no stepper (null = a fase corrente da tarefa).
+// acoes: qual ação externa de passo já foi acionada ("Baixar TXT" → "Baixado").
+// expandido: qual passo FEITO está com o corpo aberto (passo feito recolhe, como no projeto).
+// drawerQual: qual painel está aberto ('conversa' | 'historico' | 'eventos') — a chegada de
+// mensagem precisa saber se o operador já está de olho na conversa, e o painel de eventos
+// precisa se redesenhar quando alguém comenta. evPasso: de qual passo são os eventos abertos.
+// msgIdx: qual mensagem do pool o gatilho do sino vai usar na próxima vez.
+const _lab = { t: null, lancAberto: {}, rascunho: {}, anexos: {}, expandido: {}, drawer: false, drawerQual: null, evPasso: null, espera: true, vendo: null, msgIdx: 0 };
+
+/* ---------- a tarefa ---------- */
+function labId() { return new URLSearchParams(location.search).get('id') || ''; }
+// Quem chegou pela fila do operador volta pra ela; o resto volta ao painel da versão.
+function labVoltarHref() {
+  return new URLSearchParams(location.search).get('de') === 'fila' ? '../fila.html' : '../painel.html?v=' + LAB_VERSAO;
+}
+
+// Três tipos (mapa de unificacao-acompanhamento.md): cliente/Hub · HITL (robô→pessoa) · robô.
+function labTipo(t) {
+  if (t.operatorId === 'ap') return 'robo';
+  if (t.origin === 'autopilot') return 'hitl';
+  return 'cliente';
+}
+// Posse decide o que a pessoa PODE FAZER — nunca o que ela pode ler.
+function labPosse(t) {
+  if (t.status === 'completed' || t.status === 'cancelled') return 'encerrada';
+  if (t.operatorId === 'ap') return 'robo';
+  if (t.operatorId === LAB_EU) return 'minha';
+  if (t.operatorId) return 'outro';
+  return 'ninguem';
+}
+function labEhAutopilot(t) { return labTipo(t) !== 'cliente'; }
+
+/* ---------- MODO LEITURA ---------- */
+function labPodeAgir(t) { return labPosse(t) === 'minha'; }
+
+/* ---------- os dados da solicitação no formato do projeto ----------
+   Os mocks do lab trazem `secoes: [{ titulo, subsecoes: [{ titulo, campos }] }]`. O projeto
+   trabalha com `formData.abas: { aba: { secao: { campo: valor } } }` — é o que `renderForm`,
+   `enterEditMode` e `saveEdits` leem e escrevem. A conversão abaixo é só de FORMA: mesma
+   informação, mesma ordem, nada inventado. Os títulos viram as chaves de propósito — é o que
+   faz o "Ver alterações" do núcleo sair legível ("1. Geral · Dados básicos") sem dicionário.
+   Registrar em FORM_TABS_BY_TYPE é o que dá as abas ao `renderForm` e ao `renderFormReference`. */
+function labFormData(t) {
+  if (t.formData) return t.formData;
+  const secoes = _tsmSecoes(t) || [];
+  const abas = {};
+  secoes.forEach((s) => {
+    const conteudo = {};
+    if (Array.isArray(s.subsecoes)) s.subsecoes.forEach((ss) => { conteudo[ss.titulo || ''] = Object.assign({}, ss.campos); });
+    else conteudo[''] = Object.assign({}, s.campos || {});
+    abas[s.titulo] = conteudo;
+  });
+  t.formData = { abas };
+  const colab = labColaborador(t, abas);
+  if (colab) t.formData.colaborador = colab;
+  FLOW_CONFIG.FORM_TABS_BY_TYPE[t.typeCode] = secoes.map((s) => ({ id: s.titulo, label: s.titulo }));
+  return t.formData;
+}
+/* A faixa do colaborador (avatar + CPF + código) que a tela real mostra no alto dos dados. O mock
+   guarda só o nome em `t.colaborador`; CPF e matrícula estão soltos dentro dos campos, então são
+   PESCADOS de lá em vez de inventados. Sem nome, sem faixa — é o que o núcleo já faz. */
+function labColaborador(t, abas) {
+  if (!t.colaborador || typeof t.colaborador !== 'string') return null;
+  const buscar = (nomes) => {
+    for (const secs of Object.values(abas)) {
+      for (const campos of Object.values(secs)) {
+        for (const chave of nomes) if (campos && campos[chave]) return campos[chave];
+      }
+    }
+    return '';
+  };
+  return { nome: t.colaborador, cpf: buscar(['CPF']) || '—', codigo: buscar(['Matrícula', 'Código']) || '—' };
+}
+// O log de alterações que o mock já trazia (`t.log`) passa a viver onde o núcleo o procura, pra
+// que o "Ver alterações" mostre o que veio do mock E o que for editado agora na mesma lista.
+// Aba/seção não estão no mock: são descobertas procurando o campo nas seções.
+function labSemearLog(t) {
+  if (!state._editLog) state._editLog = {};
+  if (state._editLog[t.id]) return;
+  const abas = labFormData(t).abas;
+  const achar = (campo) => {
+    for (const [tab, secs] of Object.entries(abas)) {
+      for (const [sec, cs] of Object.entries(secs)) if (cs && campo in cs) return { tab, sec };
+    }
+    return { tab: Object.keys(abas)[0] || '', sec: '' };
+  };
+  state._editLog[t.id] = (t.log || []).map((e) => {
+    const onde = achar(e.field);
+    return { tabId: onde.tab, section: onde.sec, field: e.field, before: e.before, after: e.after, changedBy: e.by || OPERATOR_NAME, changedAt: e.at || '' };
+  });
+}
+
+/* ---------- fases (topo, leitura) ---------- */
+function labFases(t) {
+  const tipo = labTipo(t);
+  const done = (label) => ({ label, meta: 'Concluído', state: 'done' });
+  const pend = (label) => ({ label, meta: 'Aguardando', state: 'pending' });
+  const act = (label, meta) => ({ label, meta: meta || 'Em andamento', state: 'active' });
+  const warn = (label, meta) => ({ label, meta: meta || 'Travou', state: 'warn' });
+  const encerrada = t.status === 'completed';
+
+  if (tipo === 'robo') {
+    const L = LAB_FASES_ROBO;
+    if (encerrada) return L.map(done);
+    if (t.apHitl) return [done(L[0]), warn(L[1]), pend(L[2])];
+    return [done(L[0]), act(L[1]), pend(L[2])];
+  }
+  const L = LAB_FASES_DP;
+  if (encerrada) return L.map(done);
+  if (t.status === 'queue') return [done(L[0]), pend(L[1]), pend(L[2]), pend(L[3])];
+
+  const idx = (t.status === 'processing' || t.timelineStep === 2) ? 2 : 1;
+  const esperando = t.status === 'stationed' && !t.clientResponded;
+  return L.map((label, k) => {
+    if (k < idx) return done(label);
+    if (k > idx) return pend(label);
+    return esperando ? act(label, 'Aguardando cliente') : act(label);
+  });
+}
+// Em espera aguardando o cliente (o relógio parado), em qualquer fase.
+function labEmEspera(t) { return t.status === 'stationed' && !t.clientResponded; }
+function labFaseAtual(t) {
+  if (t.status === 'cancelled') return 'Cancelada';
+  const fs = labFases(t);
+  const atual = fs.find((f) => f.state === 'active' || f.state === 'warn');
+  if (atual) return atual.label;
+  // Sem fase em andamento (tarefa na fila, ou já encerrada): a fase corrente é a
+  // última concluída — nunca a última da régua.
+  const feitas = fs.filter((f) => f.state === 'done');
+  return feitas.length ? feitas[feitas.length - 1].label : fs[0].label;
+}
+function labNoProcessamento(t) { return labFaseAtual(t) === 'Processamento'; }
+/* Os rótulos da régua DO TIPO da tarefa. Cada mundo tem a sua: o robô tem três fases, o HITL e o
+   DP têm quatro, e os nomes não coincidem ("Execução iniciada" ≠ "Solicitação recebida"). */
+function labFasesLabels(t) {
+  const tipo = labTipo(t);
+  if (tipo === 'robo') return LAB_FASES_ROBO;
+  return LAB_FASES_DP;
+}
+function labFaseIdx(t) { return labFasesLabels(t).indexOf(labFaseAtual(t)); }
+/* ---------- NAVEGAR PELO STEPPER SEM MUDAR STATUS ---------- */
+function labFaseVista(t) {
+  const cur = labFaseIdx(t);
+  if (_lab.vendo === null || _lab.vendo === undefined) return cur;
+  return Math.min(_lab.vendo, cur);
+}
+function labVisitando(t) { return labFaseVista(t) !== labFaseIdx(t); }
+function labStepperNavegavel(t) { return t.status !== 'cancelled' && labFaseIdx(t) >= 1; }
+function labFaseClicavel(t, i) {
+  const fases = labFases(t);
+  const cur = labFaseIdx(t);
+  if (!labStepperNavegavel(t) || i > cur) return false;
+  if (i === 0 || i === fases.length - 1) return false;
+  return true;
+}
+function labIrParaFase(i) {
+  const t = _lab.t;
+  if (!labFaseClicavel(t, i)) return;
+  _lab.vendo = (i === labFaseIdx(t)) ? null : i;
+  // O roteiro sai da tela: um painel de eventos aberto fala de um passo que não está mais aqui.
+  if (_lab.drawerQual === 'eventos') labDrawerFechar();
+  labRender();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function labStepperHTML(t) {
+  const fases = labFases(t);
+  const cur = labFaseIdx(t);
+  const vista = labFaseVista(t);
+  const ult = fases.length - 1;
+  const dotCls = { done: 'tl-dot-done', active: 'tl-dot-active', warn: 'tl-dot-warn', pending: 'tl-dot-pending' };
+  return fases.map((s, i) => {
+    const podeIr = labFaseClicavel(t, i);
+    const olhando = i === vista && vista !== cur;
+    const click = podeIr ? ` onclick="labIrParaFase(${i})" title="Ver os dados desta etapa — não muda o status da tarefa"` : '';
+
+    if (i === 0 || i === ult) {
+      // Data/hora vem dos campos que a tarefa já guarda — os mesmos do header.
+      const quando = i === 0 ? solicitadoEmLabel(t) : (s.state === 'done' ? concluidoEmLabel(t) : '');
+      const cls = `tl-item-h lab-tl-marco ${s.state}`;
+      const feito = i === 0 || s.state === 'done';
+      return `<div class="${cls}"><div class="tl-marco-dot${feito ? ' feito' : ''}"></div><div class="tl-marco-label">${esc(s.label)}</div>${quando ? `<div class="tl-marco-when">${esc(quando)}</div>` : ''}</div>`;
+    }
+
+    const dot = s.state === 'done' ? '<i data-lucide="check" class="w-3 h-3"></i>' : String(i);
+    // O item ANTES da ponta final encurta a própria linha: ela é calculada pro dot de 28px e
+    // sobraria um vão de 18px até a bolinha pequena.
+    const antesDoFim = i === ult - 1 ? ' lab-tl-antes-marco' : '';
+    const cls = `tl-item-h ${s.state}${antesDoFim}${podeIr ? ' lab-tl-nav' : ''}${olhando ? ' lab-tl-olhando' : ''}`;
+    return `<div class="${cls}"${click}><div class="tl-dot ${dotCls[s.state] || 'tl-dot-pending'}">${dot}</div><div class="tl-step">${esc(s.label)}</div><div class="tl-meta">${esc(olhando ? 'Você está aqui' : (s.meta || ''))}</div></div>`;
+  }).join('');
+}
+
+// Recebida (na fila) e Dados da solicitação abrem no MESMO miolo: o que se faz nas duas
+// é conferir os dados que o cliente mandou. A diferença é só quem pode agir (posse).
+function labEmValidacao(t) { const i = labFaseVista(t); return i === 0 || i === 1; }
+
+/* ---------- roteiro (a linha de execução) ----------
+   Um renderizador só. O que muda entre os mundos é de onde vêm os passos:
+   Autopilot → AP_FLUXOS (dp-wizard.js) · DP/Hub → EXEC_STEP_PRESETS do núcleo,
+   via labPassosDoProcesso (../dados.js). Os passos NÃO são inventados aqui. */
+function labRoteiro(t) {
+  const tipo = labTipo(t);
+  if (tipo === 'robo') return labRoteiroRobo(t);
+  if (tipo === 'hitl') return labRoteiroHITL(t);
+  return labRoteiroDP(t);
+}
+
+function labRoteiroRobo(t) {
+  const etapas = AP_FLUXOS[t.apFluxo] || [];
+  if (!etapas.length) return [];
+  const total = etapas.length;
+  const done = Math.min(t.apDone || 0, total);
+  const ehRobo = labTipo(t) === 'robo';
+  // Atuações de operador no meio (compat com apOperador, igual ao apBuildMiolo)
+  let atuacoes = t.apAtuacoes ? t.apAtuacoes.slice() : [];
+  if (!atuacoes.length && t.apOperador) atuacoes = [Object.assign({ naEtapa: done - 1 }, t.apOperador)];
+  const crosslink = (ehRobo ? t.apPendencia : t.apExecucao) || null;
+
+  // Roteiro COMPLETO, inclusive na pendência HITL: quem está resolvendo precisa ver o que
+  // vem depois de destravar. Isso substitui a truncagem da regra 2 de
+  // unificacao-acompanhamento.md (que existia pra HITL não parecer "tarefa do robô" — o
+  // cabeçalho já diz de quem é a tarefa, então o corte custava mais do que resolvia).
+  const out = [];
+  for (let i = 0; i < total; i++) {
+    const e = etapas[i];
+    const atu = atuacoes.find((a) => a.naEtapa === i);
+    // O 3º campo de AP_FLUXOS é o RESULTADO do passo — só existe depois de rodar.
+    // Passo aguardando ou travado não anuncia resultado nenhum.
+    const resultado = (e[2] && e[2] !== '—') ? e[2] : '';
+    const passo = {
+      n: i + 1, grupo: e[0], nome: e[1], desc: '',
+      quando: i < done ? _apTime(i) : '', hist: [], coment: [], blocos: [], state: 'pending',
+    };
+    if (i < done) { passo.state = 'done'; passo.desc = resultado; }
+    else if (i === done && t.apHitl) {
+      passo.state = 'failed';
+      passo.quando = _apTime(i); // falhou também tem hora: é o momento em que travou
+      passo.falha = { texto: t.apHitl.det || '', comparativo: t.apHitl.comparativo || null, link: crosslink, need: t.apHitl.need || '' };
+    } else if (i === done && t.apRun) passo.state = 'active';
+
+    // Registros e comentários: quando a tarefa DECLARA o log (labHist/labComent — o caso
+    // trazido da versão em modal), é ele que vale. Sem declaração, deriva das atuações.
+    if (t.labHist || t.labComent) {
+      passo.hist = ((t.labHist || {})[i] || []).slice();
+      passo.coment = ((t.labComent || {})[i] || []).slice();
+    } else {
+      if (atu && atu.divergencia) {
+        passo.hist.push({ tipo: 'erro', quando: _apTime(i), texto: atu.divergencia, comparativo: atu.comparativo || null, link: (!ehRobo && crosslink) ? crosslink : null });
+        if (passo.state === 'done') passo.hist.push({ tipo: 'ok', quando: _apTime(i), texto: '' });
+      }
+      // A atuação humana entra como COMENTÁRIO do passo (não como registro do robô).
+      if (atu && (atu.resposta || atu.obs)) {
+        passo.coment.push({
+          autor: atu.nome || 'Operador', quando: _apTime(i),
+          texto: (atu.resposta ? ('Teve que corrigir alguma coisa? ' + (atu.resposta === 'sim' ? 'Sim' : 'Não, estava tudo certo') + (atu.obs ? ' — ' : '')) : '') + (atu.obs || ''),
+          anexos: atu.anexos || [],
+        });
+      }
+    }
+    // Se o passo rodou de novo, a linha de cima mostra o resultado da ÚLTIMA execução —
+    // senão o resumo contradiz o registro que está lá dentro (ex.: líquido da versão 1
+    // no título e da versão 2 no registro).
+    const ultimoOk = passo.hist.filter((h) => h.tipo === 'ok' && h.texto).pop();
+    if (ultimoOk && passo.state === 'done') { passo.desc = ultimoOk.texto; passo.quando = ultimoOk.quando || passo.quando; }
+    // Passo que rodou pode declarar seu horário e seus blocos (arquivos, destino). Só depois de
+    // rodar: passo aguardando não tem hora nem material.
+    if (passo.state !== 'pending') {
+      if (t.labQuando && t.labQuando[i]) passo.quando = t.labQuando[i];
+      if (t.labBlocos && t.labBlocos[i]) passo.blocos.push(...t.labBlocos[i]);
+    }
+    out.push(passo);
+  }
+  return out;
+}
+
+function labHoraPasso(t, i) {
+  const m = /(\d{1,2}):(\d{2})/.exec(t.receivedAt || '');
+  const base = (m ? Number(m[1]) * 60 + Number(m[2]) : 540) + 25 + i * 6;
+  const dia = _dmyFromDaysAgo(t.createdDaysAgo).slice(0, 5);
+  return `${dia} · ${_pad2(Math.floor(base / 60) % 24)}:${_pad2(base % 60)}`;
+}
+
+const LAB_V1_PASSO_FINAL = {
+  nome: 'Mensagem e entrega ao cliente',
+  desc: '',
+};
+
+function labPassosDP(t) {
+  return labPassosDoProcesso(t.typeCode).map((p) => (p.tipo === 'final-message'
+    ? Object.assign({}, p, LAB_V1_PASSO_FINAL)
+    : p));
+}
+
+function labRoteiroDP(t) {
+  // Passos = os MESMOS das telas de fluxo (EXEC_STEP_PRESETS do núcleo), via dados.js.
+  // Exceção declarada acima: o passo final de DP tem nome e descrição próprios nesta versão.
+  const passos = labPassosDP(t);
+  const done = t.labDone || 0;
+  const falha = t.labFalha || null;
+  const rodando = labNoProcessamento(t);
+
+  /* EVENTOS E COMENTÁRIOS DO PASSO — indexados pela posição no roteiro RENDERIZADO, que é o `i`
+     que os botões de comentar usam. O robô e o HITL já leem `labHist`/`labComent` assim; o DP não
+     lia, e o efeito era um comentário que se gravava e desaparecia no redesenho seguinte (a
+     contagem no cabeçalho também nunca subia). Bug antigo, que só ficou visível depois de 04/08 —
+     antes os passos de DP não tinham evento nenhum pra pendurar comentário. */
+  const doPasso = (idx) => ({
+    hist: ((t.labHist || {})[idx] || []).slice(),
+    coment: ((t.labComent || {})[idx] || []).slice(),
+  });
+
+  const out = [Object.assign({
+    n: 1, grupo: '', nome: 'Dados da solicitação',
+    desc: 'Dados conferidos pelo operador e liberados para processamento.',
+    quando: labHoraPasso(t, 0), state: 'done', blocos: [],
+  }, doPasso(0))];
+
+  passos.forEach((p, k) => {
+    let state = 'pending';
+    if (k < done) state = 'done';
+    else if (falha && falha.naEtapa === k) state = 'failed';
+    else if (k === done && rodando) state = 'active';
+    const blocos = [];
+    // Tudo o que fala da falha vai DENTRO do evento de falha — causa, dados e o que precisa ser
+    // feito (ver labRoteiroRobo).
+    let dadosFalha = null;
+    if (state === 'failed' && falha) {
+      dadosFalha = { texto: falha.texto, comparativo: falha.comparativo || null, link: null, need: falha.need || '' };
+    }
+    if (p.ref) blocos.push({ tipo: 'dados-solicitacao', opts: { primeiroAberto: p.refAberto } });
+    if (p.painelId) blocos.push({ tipo: 'painel-gestta' });
+    if (p.tipo === 'final-message') blocos.push({ tipo: 'mensagem-final', feito: state === 'done' });
+    // Passo que ainda não rodou não tem hora — mesma regra do robô: aguardando não anuncia nada.
+    out.push(Object.assign({
+      n: k + 2, grupo: '', nome: p.nome, desc: p.desc, state, blocos, falha: dadosFalha,
+      quando: (state === 'done' || state === 'failed') ? labHoraPasso(t, k + 1) : '',
+      passoIdx: k, acao: p.acao, autoConclui: p.autoConclui,
+    }, doPasso(k + 1)));
+  });
+  return out;
+}
+
+/* ---------- miolo do HITL ---------- */
+function labMioloHITL(t) {
+  const fase = labFaseVista(t);
+  if (fase >= 2) return labExecucao(t);
+  return labAtuacaoHITL(t);
+}
+
+// A última atuação do operador — é ela que a tarefa HITL registra como "o que foi feito".
+function labUltimaAtuacao(t) {
+  const lista = (t.apAtuacoes && t.apAtuacoes.length) ? t.apAtuacoes : (t.apOperador ? [t.apOperador] : []);
+  return lista.length ? lista[lista.length - 1] : null;
+}
+
+function labHoraRecebida(t) {
+  const dia = _dmyFromDaysAgo(t.createdDaysAgo).slice(0, 5);
+  return t.receivedAt ? `${dia} · ${t.receivedAt}` : dia;
+}
+
+function labFalhaHITL(t) {
+  const m = (typeof apBuildMiolo === 'function') ? apBuildMiolo(t) : null;
+  if (m && m.problem) return { head: m.problem.head, texto: m.problem.text || '', detalheHTML: m.problem.detailHTML || '' };
+  const etapas = [];
+  ((m && m.grupos) || []).forEach((g) => (g.segmentos || []).forEach((s) => (s.etapas || []).forEach((e) => etapas.push(e))));
+  const an = etapas.filter((e) => e.anomalia).pop();
+  if (an) return { head: an.nome, texto: an.det || '', comparativo: an.comparativo || null, link: an.link || t.apExecucao || null };
+  // Sem miolo montável: o que a tarefa declarar. O título dela é o último recurso pro nome.
+  const h = t.apHitl || t.labHitlOrigem || null;
+  const atu = labUltimaAtuacao(t);
+  const texto = (h && h.det) || (atu && atu.divergencia) || '';
+  if (!texto) return null;
+  return { head: t.type || 'Falhou', texto, comparativo: (h && h.comparativo) || (atu && atu.comparativo) || null, link: t.apExecucao || null };
+}
+
+function labRoteiroHITL(t) {
+  const alu = aluEhAluguel(t);
+  const atu = labUltimaAtuacao(t);
+  const quando = (alu && t.aluguel.enviado) ? t.aluguel.enviado.quando : _apTime((t.apDone || 1) - 1);
+  const quem = (atu && atu.nome) ? atu.nome.split(' · ')[0] : OPERATOR_NAME;
+  let desc = atu
+    ? `${quem} — ${atu.resposta === 'sim' ? 'corrigiu o que estava divergente' : 'conferiu e não precisou corrigir'}`
+    : 'Resolvido e devolvido ao Autopilot.';
+  if (alu) desc = `${quem} — preencheu os dados do aluguel`;
+  // A pendência de aluguel não nasce de anomalia: não há "por que parou" pra mostrar.
+  const falha = alu ? null : labFalhaHITL(t);
+  const blocos = [];
+  if (falha) {
+    blocos.push({
+      tipo: 'contexto', head: falha.head, texto: falha.texto,
+      comparativo: falha.comparativo || null, link: falha.link || null,
+      detalheHTML: falha.detalheHTML || '', quando: labHoraRecebida(t),
+    });
+  }
+  if (alu) blocos.push({ tipo: 'dados-aluguel' });
+  else if (atu) blocos.push({ tipo: 'atuacao', resposta: atu.resposta, obs: atu.obs, anexos: atu.anexos || [] });
+  /* NASCE ABERTO. O passo feito recolhe porque, numa tarefa de DP concluída, quatro corpos
+     empilhados viram um paredão — aqui existe UM passo, e recolhê-lo deixa a tela sem nada além
+     do próprio título. Pior: o que está dentro é a razão de a tarefa existir. Quem abre uma
+     pendência do robô precisa ler por que ela chegou até ele sem antes caçar uma seta. */
+  return [{
+    n: 1, grupo: '', nome: 'Atuação do operador', desc, quando, state: 'done', blocos,
+    nasceAberto: true,
+    hist: [{ tipo: 'ok', quando, texto: '' }],
+    coment: (t.labComent && t.labComent[0]) ? t.labComent[0].slice() : [],
+  }];
+}
+
+function labAtuacaoHITL(t) {
+  if (aluEhAluguel(t)) return labAtuacaoAluguel(t);
+  const posse = labPosse(t);
+  // materiais só quando existem: as telas reais sempre passam true porque as tarefas delas
+  // sempre têm anexo; estes mocks não têm, e um "Materiais (0)" vazio é ruído.
+  const anexos = t.attachments || [];
+  const miolo = apMiolo(apBuildMiolo(t), { materiais: anexos.length > 0, anexos });
+
+  const visita = labVisitando(t);
+
+  let nota = '';
+  if (visita) nota = '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 20px;">Você está revendo uma etapa que já passou: a anomalia e o que foi feito estão aqui, mas ela já foi resolvida e devolvida ao Autopilot.</p>';
+  else if (posse === 'ninguem') nota = '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 20px;">A tarefa ainda não tem dono: aqui é leitura. Para resolver a anomalia e devolver ao Autopilot, atribua a você.</p>';
+  else if (posse === 'outro') nota = '<p style="color:var(--text-secondary);font-size:13px;margin:0 0 20px;">Você está lendo uma tarefa que não é sua: os controles ficam desativados.</p>';
+
+  let resolucao = '';
+  if (!visita) {
+    _correcao = null;
+    window._resolucaoFiles = [];
+    const corpo = resolucaoHTML().replace('enviarAoRobo()', 'labEnviarAoRobo()');
+    if (labPodeAgir(t)) {
+      resolucao = `<div class="section-card" id="resolucao-card">${corpo}</div>`;
+    } else {
+      const motivo = posse === 'ninguem'
+        ? 'A tarefa não tem dono — atribua a você para resolver'
+        : 'Só quem está com a tarefa resolve e devolve ao Autopilot';
+      resolucao = `<div class="section-card" id="resolucao-card" title="${motivo}" style="cursor:not-allowed;"><fieldset disabled style="border:none;margin:0;padding:0;opacity:0.5;">${corpo}</fieldset></div>`;
+    }
+  }
+
+  return `<div class="section-card">
+    <div class="section-title" style="margin-bottom:0;"><i data-lucide="file-text"></i>Dados da solicitação</div>
+    ${nota}${miolo}
+  </div>${resolucao}`;
+}
+
+/* A pendência de aluguel: no lugar da anomalia e da resolução, o formulário (../aluguel.js). */
+function labAtuacaoAluguel(t) {
+  const posse = labPosse(t);
+  const visita = labVisitando(t);
+  const estilo = 'color:var(--text-secondary);font-size:13px;margin:14px 0 0;';
+  let nota = '';
+  if (visita) nota = `<p style="${estilo}">Você está revendo uma etapa que já passou: os dados abaixo já foram enviados ao Motor Fiscal.</p>`;
+  else if (posse === 'ninguem') nota = `<p style="${estilo}">A tarefa ainda não tem dono: aqui é leitura. Para preencher os dados e devolver ao Motor Fiscal, atribua a você.</p>`;
+  else if (posse === 'outro') nota = `<p style="${estilo}">Você está lendo uma tarefa que não é sua: os controles ficam desativados.</p>`;
+  return `<div class="section-card">
+    <div class="section-title" style="margin-bottom:0;"><i data-lucide="file-text"></i>Dados da solicitação</div>
+    ${nota}
+    <div style="margin-top:18px;">${visita ? aluRegistroHTML(t) : aluFormHTML(t)}</div>
+  </div>`;
+}
+
+/* O envio do wizard. A resposta do operador vira uma ATUAÇÃO e a anomalia morre — é o estado
+   em que a T-5012 (HITL concluída) já nasce, então a tela fica coerente se você voltar nela.
+   Depois de enviar, a tela vira o ROTEIRO (não mais a tela dedicada de "Reprocessando…"):
+   primeiro com o fecho dizendo que o motor está reprocessando e, quando ele termina, dizendo
+   que você fez sua parte. Mesma informação da tela que morreu, dentro do passo a passo. */
+function labEnviarAoRobo() {
+  const t = _lab.t;
+  const ta = document.getElementById('wizard-descricao');
+  const obs = ta ? ta.value.trim() : '';
+  if (!obs) return;
+  const h = t.apHitl || {};
+  t.apAtuacoes = (t.apAtuacoes || []).concat([{
+    naEtapa: t.apDone || 0, divergencia: h.det || '', comparativo: h.comparativo || null,
+    nome: OPERATOR_NAME + ' · operadora', resposta: _correcao || 'nao', obs,
+    anexos: (window._resolucaoFiles || []).slice(),
+  }]);
+  delete t.apOperador; // compat: se o mock usava o objeto único, a atuação agora está na lista
+  t.apHitl = null;
+  labDevolverAoMotor(t);
+}
+
+// A pendência volta pro motor: o passo dela conta como feito e o roteiro assume a tela.
+function labDevolverAoMotor(t) {
+  t.apDone = (t.apDone || 0) + 1;
+  t.status = 'processing';
+  labRender();
+  setTimeout(() => {
+    t.status = 'completed';
+    t.finishedDaysAgo = 0;
+    t.finishedAt = labAgora();
+    labRender();
+  }, 2100);
+}
+
+/* ---------- header ---------- */
+function labHeader(t) {
+  const tipo = labTipo(t), posse = labPosse(t);
+  const encerrada = posse === 'encerrada';
+  const op = acOp(t.operatorId);
+  const isAP = labEhAutopilot(t);
+
+  const bc = [`<a href="${labVoltarHref()}" style="color:inherit;text-decoration:none;" class="cursor-pointer hover:text-rose-500">← Voltar</a>`];
+  bc.push(`<span>${esc(labFaseAtual(t))}</span>`);
+
+  const tags = isAP
+    ? `<span class="contact-tag">robô</span>`
+    : `<span class="contact-tag contact-tag-client">cliente</span>${(t.senderScopes || []).map((s) => `<span class="contact-tag">${esc(s)}</span>`).join('')}`;
+
+  const quando = t.status === 'completed'
+    ? `Solicitado em ${esc(solicitadoEmLabel(t))} <span style="color:var(--text-tertiary);">·</span> <span style="color:var(--success);font-weight:600;">Concluído em ${esc(concluidoEmLabel(t))}</span>`
+    : `Solicitado em ${esc(solicitadoEmLabel(t))}`;
+
+  const atribuido = t.operatorId === 'ap'
+    ? `Atribuído ao <strong style="color:var(--text-primary);font-weight:600;">Autopilot</strong>`
+    : (op ? `Atribuído a <strong style="color:var(--text-primary);font-weight:600;">${esc(op.nome)}</strong>${posse === 'minha' ? ' <span style="color:var(--text-tertiary);">(você)</span>' : ''}`
+          : `<span style="color:var(--text-tertiary);">Não atribuída ainda</span>`);
+
+  /* Ação depende de posse — e é UMA por vez. */
+  let acao = '';
+  if (posse === 'minha') acao = `<button class="btn-return-queue" onclick="labDevolverFila()"><i data-lucide="corner-up-left" class="w-4 h-4"></i>Devolver à fila</button>`;
+  else if (posse === 'ninguem') acao = `<button class="btn btn-primary" style="padding:7px 14px;font-size:12.5px;" onclick="labAtribuirAMim()"><i data-lucide="user-plus" class="w-4 h-4"></i>Atribuir a mim</button>`;
+  else if (posse === 'outro') acao = `<button class="btn-return-queue" onclick="labDevolverFila()"><i data-lucide="corner-up-left" class="w-4 h-4"></i>Devolver à fila</button>`;
+
+  const cancelada = t.status === 'cancelled'
+    ? `<div class="stopped-card" style="margin-top:16px;"><div class="problem-head"><i data-lucide="x-circle"></i>Cancelada</div><div class="problem-text">Justificativa: ${esc(t.cancelReason || '—')}</div></div>`
+    : '';
+
+  return `<div class="section-card lab-topo" style="padding:20px 28px;">
+    <div class="flex items-center gap-3" style="font-size:12px;color:var(--text-secondary);margin-bottom:20px;">
+      ${bc.join('<span>/</span>')}
+    </div>
+    <div class="flex items-start gap-4" style="flex-wrap:wrap;">
+      <div style="min-width:0;flex:1 1 340px;">
+        <h1 style="font-size:22px;font-weight:700;margin:0 0 4px;">${esc(t.type || '')}</h1>
+        <div style="font-size:13px;"><strong style="font-weight:600;">${esc(t.clientName || '')}</strong><span style="color:var(--text-tertiary);"> · </span><span style="color:var(--text-secondary);font-family:'JetBrains Mono',monospace;">${esc(t.cnpj || '')}</span></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--text-tertiary);">${olMetaStripHtml(t)}</div>
+      </div>
+      <div class="lab-head-acoes">${labHistoricoBtn(t)}${labConversaBtn(t)}</div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:12px 0;"></div>
+    <div style="font-size:13px;color:var(--text-secondary);display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;">
+        <span>${isAP ? 'Iniciado pelo' : 'Solicitado por'} <strong style="color:var(--text-primary);font-weight:600;">${esc(t.senderName || '—')}</strong></span>
+        <span style="display:inline-flex;gap:4px;">${tags}</span>
+        <span style="color:var(--text-tertiary);">·</span>
+        <span style="color:var(--text-tertiary);">${quando}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span>${atribuido}</span>
+        ${acao}
+      </div>
+    </div>
+    ${cancelada}
+  </div>`;
+}
+
+/* ---------- BLOCOS: o conteúdo que um passo declara carregar ---------- */
+function labBloco(t, bl) {
+  if (!bl) return '';
+  if (bl.tipo === 'contexto') {
+    const link = bl.link ? `<button class="ap-crosslink" onclick="acNavModal('${bl.link.to}')"><i data-lucide="external-link" style="width:15px;height:15px;"></i>${esc(bl.link.label)}</button>` : '';
+    /* `detalheHTML` vem pronto do `apBuildMiolo` (comparativo + cross-link já montados) — é o
+       caminho do HITL, que lê a falha da mesma fonte que a tela de resolução. Quando ele existe,
+       comparativo e link já estão lá dentro e montá-los de novo duplicaria os dois. */
+    const detalhe = bl.detalheHTML ? bl.detalheHTML : `${apCmpHTML(bl.comparativo)}${link}`;
+    // A hora é a do fato, no mesmo fio do título do passo: quando o motor travou.
+    const quando = bl.quando ? `<span class="step-sep"></span><span class="step-when">${esc(bl.quando)}</span>` : '';
+    return `<div class="stopped-card"><div class="problem-head lab-titulo-hora"><i data-lucide="circle-x"></i>${esc(bl.head || 'Por que parou')}${quando}</div><div class="problem-text">${esc(bl.texto || '')}</div>${detalhe}</div>`;
+  }
+  if (bl.tipo === 'need') return apNeedBlock(bl.texto || '');
+  // Arquivos que o passo produziu — mesmo chip de material que o resto do protótipo usa
+  // (visualizar/baixar inclusos). Sempre visível: o arquivo é o RESULTADO do passo, não
+  // histórico. Quem abre a tarefa procurando o entregável não devia ter que clicar pra achar.
+  if (bl.tipo === 'arquivos') {
+    const itens = bl.itens || [];
+    if (!itens.length) return '';
+    return `<div><div class="lab-bl-label">${esc(bl.label || 'Arquivos')}</div>
+      <div class="lab-arqs">${itens.map((x) => materialChip(x)).join('')}</div></div>`;
+  }
+  if (bl.tipo === 'destino') {
+    const abrir = `flash('Protótipo: a pasta abriria no ${esc(bl.onde || 'GDocs')}.')`;
+    return `<div><div class="lab-bl-label">Guardado em${bl.onde ? ` · ${esc(bl.onde)}` : ''}</div>
+      <div class="lab-arqs"><div class="material-chip lab-chip-pasta" onclick="${abrir}">
+        <i data-lucide="folder"></i>
+        <span class="material-chip-name">${esc(bl.pasta || 'Pasta da competência')}</span>
+        ${bl.n ? `<span class="material-chip-tag tag-doc">${bl.n} documento${bl.n > 1 ? 's' : ''}</span>` : ''}
+        <div class="material-chip-actions"><button class="material-chip-btn" title="Abrir pasta" onclick="event.stopPropagation(); ${abrir}"><i data-lucide="external-link"></i></button></div>
+      </div></div></div>`;
+  }
+  if (bl.tipo === 'dados-solicitacao') return labDadosSolicitacao(t, bl.opts);
+  if (bl.tipo === 'dados-aluguel') return aluRegistroHTML(t);
+  /* Painel do Gestta: a função é a DO NÚCLEO, sem uma linha de diferença — é o mesmo painel azul
+     com o nome sugerido que a tela de execução do fluxo mostra. O nome sai de
+     `buildGesttaTaskName`, que lê o formulário da tarefa (por isso precisa do formData montado). */
+  if (bl.tipo === 'painel-gestta') { labFormData(t); return renderTaskIdPanel(t); }
+  if (bl.tipo === 'mensagem-final') {
+    // Passo feito: o bloco é registro do que foi enviado, não formulário. Não há por que oferecer
+    // campo e "Anexar" numa entrega que já saiu.
+    if (bl.feito) return labMsgFinalRegistro(t);
+    if (labPodeAgir(t)) return labMsgFinalForm(t);
+    const motivoAnexo = 'Só quem está com a tarefa executa os passos';
+    return `<div title="${motivoAnexo}" style="cursor:not-allowed;"><fieldset disabled style="border:none;margin:0;padding:0;opacity:0.55;">${labMsgFinalForm(t)}</fieldset></div>`;
+  }
+  if (bl.tipo === 'atuacao') {
+    const resp = bl.resposta ? `Teve que corrigir alguma coisa? <strong>${bl.resposta === 'sim' ? 'Sim' : 'Não, estava tudo certo'}</strong>` : 'Resposta do operador';
+    const obs = bl.obs ? `<div class="ta-obs">“${esc(bl.obs)}”</div>` : '';
+    const anexos = (bl.anexos && bl.anexos.length) ? `<div class="ta-anexos">${bl.anexos.map((x) => materialChip(x)).join('')}</div>` : '';
+    return `<div class="ta-acao ta-op"><i data-lucide="message-square-text"></i><div class="ta-acao-body"><div class="ta-text">${resp}</div>${obs}${anexos}</div></div>`;
+  }
+  return '';
+}
+
+/* ---------- MENSAGEM E ENTREGA AO CLIENTE — o passo final de DP ---------- */
+function labMsgFinalTexto(t) { return (state._clientReply && state._clientReply[t.id]) || ''; }
+function labMsgFinalArqs(t) { return (state._gdocsFiles && state._gdocsFiles[t.id]) || []; }
+
+/* Guarda o texto SEM re-renderizar — mesma razão do labRascunho: quem está digitando perderia o
+   foco a cada tecla. O `setClientReply` do núcleo é quem escreve (ele acha a tarefa por
+   `state.currentTaskId`, que o labMount aponta pra tarefa do lab). */
+function labMsgFinalEscrever(valor) {
+  setClientReply(valor);
+}
+
+function labMsgFinalChips(t, removivel) {
+  const arqs = labMsgFinalArqs(t);
+  if (!arqs.length) return '';
+  return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">${arqs
+    .map((f, idx) => renderFileItem(f, { removable: !!removivel, removeFn: `removeGdocsFile(${idx})` }))
+    .join('')}</div>`;
+}
+
+/* O FORMULÁRIO. A ordem é a da conversa com o cliente: primeiro a regra (o card azul), depois o que
+   você diz, depois o que você manda junto.
+   O card azul é o MESMO componente que o núcleo já usava neste passo (fundo `--info-soft`, borda
+   #bfdbfe, texto #1e40af) — muda o ícone e o texto, não o objeto. O campo e o botão de anexar são
+   os do `renderClientReplySection`, que é o padrão do projeto pra "mensagem que vai pro cliente":
+   rótulo com asterisco rosa, textarea que cresce, botão branco com clipe. Nenhum padrão novo. */
+function labMsgFinalForm(t) {
+  const txt = labMsgFinalTexto(t);
+  return `
+    <div style="background:var(--info-soft);border:1px solid #bfdbfe;border-radius:10px;padding:16px 18px;display:flex;gap:12px;align-items:flex-start;">
+      <i data-lucide="send" style="width:18px;height:18px;color:var(--info);flex-shrink:0;margin-top:2px;"></i>
+      <div style="flex:1;font-size:13px;line-height:1.55;color:#1e40af;">
+        <div style="font-weight:600;margin-bottom:4px;">O que você escrever e anexar aqui vai para o cliente.</div>
+        <div>Quando você concluir a solicitação, a mensagem e os arquivos aparecem para ele no HUB, dentro desta solicitação.</div>
+      </div>
+    </div>
+    <div class="field-label mb-2" style="margin-top:18px;">Mensagem para o cliente <span style="color:var(--brand-pink);">*</span></div>
+    <p style="font-size:12.5px;color:var(--text-secondary);line-height:1.55;margin:0 0 8px;">Conte o que foi feito e o que ele está recebendo. Ex.: Admissão registrada. Segue o contrato de experiência e a ficha de registro para assinatura.</p>
+    <textarea id="lab-msg-final" oninput="labMsgFinalEscrever(this.value)"
+      style="width:100%;box-sizing:border-box;min-height:110px;padding:12px;border:1px solid var(--border-strong);border-radius:10px;font-family:inherit;font-size:13px;line-height:1.55;resize:vertical;outline:none;"
+      onfocus="this.style.borderColor='var(--brand-pink)'" onblur="this.style.borderColor='var(--border-strong)'">${esc(txt)}</textarea>
+    <div class="lab-bl-label" style="margin-top:18px;">Arquivos para o cliente <span style="text-transform:none;letter-spacing:0;font-weight:400;">(opcional)</span></div>
+    <input type="file" id="gdocs-file-input" style="display:none;" multiple onchange="handleFileSelect(event)" />
+    <div><button class="lab-anexar-btn" onclick="document.getElementById('gdocs-file-input').click()"><i data-lucide="paperclip" style="width:14px;height:14px;"></i>Anexar arquivo para o cliente</button></div>
+    ${labMsgFinalChips(t, true)}
+  `;
+}
+
+/* O REGISTRO, depois de feito. A entrega já saiu: o que a tela tem a fazer é mostrar o que o
+   cliente recebeu. A caixa da mensagem é a `.lab-tl-msg` — a mesma que o painel de Histórico usa
+   pra mostrar mensagem do HUB, porque é a mesma coisa vista de outro lugar.
+   Sem mensagem (tarefa fechada antes desta regra existir) o bloco DIZ isso, em âmbar: é o furo que
+   a reunião apontou, e esconder deixaria o registro parecendo completo. */
+function labMsgFinalRegistro(t) {
+  const txt = labMsgFinalTexto(t).trim();
+  const arqs = labMsgFinalArqs(t);
+  const msg = txt
+    ? `<div class="lab-tl-msg">${esc(txt)}</div>`
+    : `<div class="lab-espera-aviso" style="margin-top:0;"><i data-lucide="alert-triangle"></i>Nenhuma mensagem foi enviada — o cliente recebeu a solicitação concluída sem explicação.</div>`;
+  const arquivos = arqs.length
+    ? `<div class="lab-bl-label" style="margin-top:16px;">Arquivos enviados</div>${labMsgFinalChips(t, false)}`
+    : `<div class="lab-bl-label" style="margin-top:16px;">Arquivos enviados</div><p class="lab-vazio" style="font-size:12.5px;">Nenhum arquivo — só a mensagem.</p>`;
+  return `<div>
+    <div class="lab-bl-label">Enviado ao cliente</div>
+    ${msg}
+    ${arquivos}
+  </div>`;
+}
+
+/* O passo final só fecha COM MENSAGEM. O bloqueio mora no caminho de marcar como feito (e no
+   confirmar do modal, como rede) em vez de desabilitar o botão: botão morto não diz por quê, e o
+   flash + foco no campo levam a pessoa exatamente pra onde falta coisa. */
+function labMsgFinalPendente(t, p) {
+  if (!p || !(p.blocos || []).some((b) => b.tipo === 'mensagem-final')) return false;
+  return !labMsgFinalTexto(t).trim();
+}
+
+const LAB_V1_ENTREGA = {
+  'T-2049': {
+    texto: 'Admissão do Rafael registrada na Domínio e transmitida ao eSocial. Seguem o contrato de experiência e a ficha de registro para assinatura, e o recibo do eSocial para o arquivo de vocês. O adicional de insalubridade de 20% já entrou no cadastro — qualquer mudança no percentual me avise antes do fechamento da folha.',
+    arquivos: [
+      { name: 'Contrato-de-experiencia-Rafael-Nogueira-Dias.pdf', size: '184 KB' },
+      { name: 'Ficha-de-registro-Rafael-Nogueira-Dias.pdf', size: '96 KB' },
+      { name: 'Recibo-eSocial-S2200.pdf', size: '48 KB' },
+    ],
+  },
+};
+
+function labSemearMsgFinal(t) {
+  const seed = LAB_V1_ENTREGA[t.id];
+  if (!seed) return;
+  if (!state._clientReply) state._clientReply = {};
+  if (!state._clientReply[t.id]) state._clientReply[t.id] = seed.texto;
+  if (!state._gdocsFiles[t.id].length) state._gdocsFiles[t.id] = seed.arquivos.slice();
+}
+
+function labMsgFinalCobrar() {
+  flash('Escreva a mensagem que o cliente vai receber antes de concluir.', 'warning');
+  const ta = document.getElementById('lab-msg-final');
+  if (ta) { ta.focus(); ta.scrollIntoView({ block: 'center', behavior: 'smooth' }); ta.style.borderColor = 'var(--brand-pink)'; }
+}
+
+/* ---------- EVENTOS DO PASSO ---------- */
+const LAB_EV_ROTULO = { ok: 'Concluído com sucesso', erro: 'Falhou' };
+
+function labEvNota(t) {
+  return labTipo(t) === 'robo'
+    ? 'Motor executou e reportou sucesso — sem divergências no retorno.'
+    : 'Passo concluído pelo operador, sem pendência registrada.';
+}
+
+function labEventos(t, p) {
+  const evs = (p.hist || []).map((h) => Object.assign({}, h));
+  // O evento que faltava: o passo rodou (ou travou) e a tarefa não declarou nada.
+  if (!evs.length && p.state === 'done') evs.push({ tipo: 'ok', quando: p.quando || '', texto: '' });
+  if (!evs.length && p.state === 'failed') evs.push({ tipo: 'erro', quando: p.quando || '', texto: '' });
+  if (p.falha) {
+    let alvo = null;
+    for (let k = evs.length - 1; k >= 0; k--) if (evs[k].tipo === 'erro') { alvo = evs[k]; break; }
+    if (alvo) {
+      if (!alvo.texto) alvo.texto = p.falha.texto || '';
+      if (!alvo.comparativo) alvo.comparativo = p.falha.comparativo || null;
+      if (!alvo.link) alvo.link = p.falha.link || null;
+      if (!alvo.need) alvo.need = p.falha.need || '';
+    }
+  }
+  if (!evs.length) return [];
+  // Cada evento leva os comentários dele; os sem dono vão para o mais provável.
+  evs.forEach((e, k) => { e.coment = (p.coment || []).filter((c) => c.lanc === k); });
+  const orfaos = (p.coment || []).filter((c) => c.lanc === undefined || c.lanc === null);
+  if (orfaos.length) {
+    let alvo = evs.length - 1;
+    for (let k = 0; k < evs.length; k++) if (evs[k].tipo === 'erro') alvo = k;
+    evs[alvo].coment = evs[alvo].coment.concat(orfaos);
+  }
+  return evs;
+}
+
+function labPassoTemHist(t) { return t.status !== 'cancelled'; }
+
+function labPassoHist(t, p, i, opts) {
+  const recolhivel = !!(opts && opts.recolhivel);
+  const seta = recolhivel
+    ? `<div class="step-chev-row"><span class="step-hist step-chev${_lab.expandido[i] ? ' open' : ''}"><i data-lucide="chevron-down" class="ex-chev" style="width:14px;height:14px;"></i></span></div>`
+    : '';
+  const evs = labPassoTemHist(t) ? (p.eventos || []) : [];
+  // Passo que não rodou não tem o que registrar — mas se ele recolhe, a seta continua sendo o
+  // gesto do bloco e tem que estar no mesmo canto dos outros.
+  if (!evs.length) return seta;
+  const temFalha = evs.some((e) => e.tipo === 'erro');
+  const viva = temFalha && p.state === 'failed';
+  const alerta = temFalha
+    ? `<span class="step-alerta ${viva ? 'viva' : 'velha'}"><i data-lucide="circle-alert"></i></span>`
+    : '';
+  const nCmt = (p.coment || []).length;
+  const cmt = nCmt
+    ? `<span class="step-ev-cmt" title="${nCmt} comentário${nCmt > 1 ? 's' : ''} neste passo"><i data-lucide="message-square"></i>${nCmt}</span>`
+    : '';
+  const dica = viva ? 'Falhou e está parado aqui — ver o que aconteceu' : (temFalha ? 'Teve falha durante a execução' : 'Ver o que aconteceu neste passo');
+  return `<div class="step-hist-row">
+    <button class="lab-conversa-btn step-ev-btn${viva ? ' viva' : ''}" title="${dica}" onclick="event.stopPropagation(); labEventosAbrir(${i})">${cmt}${alerta}<span>Eventos (${evs.length})</span></button>
+  </div>${seta}`;
+}
+
+function labEstadoVisual(t, p) {
+  if (p.state === 'active' && labEhAutopilot(t)) return 'pending';
+  return p.state;
+}
+
+function labPassoEstado(t, p, i) {
+  const posse = labPosse(t);
+  const st = labEstadoVisual(t, p);
+  const off = !labPodeAgir(t);
+  const motivo = 'Só quem está com a tarefa executa os passos';
+  const desliga = ` disabled title="${motivo}" style="opacity:0.45;cursor:not-allowed;"`;
+  let tag = '';
+  if (st === 'done') {
+    tag = '';
+    if (p.acao && p.autoConclui) {
+      tag = `<button class="step-edit-btn" onclick="event.stopPropagation(); labAcaoPasso(${i})"${off ? desliga : ''}><i data-lucide="${p.acao.icon}" class="w-3 h-3"></i> ${esc(p.acao.label)}</button>` + tag;
+    }
+  } else if (st === 'failed') tag = `<span class="badge" style="background:#fef2f2;color:var(--danger);"><i data-lucide="alert-triangle" class="w-3 h-3"></i> Falhou</span>`;
+  else if (st === 'active') {
+    let acaoBtn = '';
+    if (p.acao) {
+      /* A ação continua clicável depois do clique: baixar de novo, reabrir o Gestta.
+         Quem diz que o passo acabou é o "Marcar como feito", não o botão. */
+      acaoBtn = `<button class="step-action" onclick="labAcaoPasso(${i})"${off ? desliga : ''}><i data-lucide="${p.acao.icon}" class="w-3.5 h-3.5"></i> ${esc(p.acao.label)}</button>`;
+    }
+    const rotuloFeito = (p.blocos || []).some((b) => b.tipo === 'mensagem-final') ? 'Concluir' : 'Marcar como feito';
+    const marcar = p.autoConclui ? '' : (labPodeAgir(t)
+      ? `<button class="step-mark-done" onclick="labMarcarFeito(${i})"><i data-lucide="check" class="w-3.5 h-3.5"></i> ${rotuloFeito}</button>`
+      : `<button class="step-mark-done"${desliga}><i data-lucide="check" class="w-3.5 h-3.5"></i> ${rotuloFeito}</button>`);
+    tag = acaoBtn + marcar;
+  } else tag = `<span class="step-espera">Aguardando</span>`;
+  if (!tag) return '';
+  return `<div class="step-status">${tag}</div>`;
+}
+
+function labPasso(t, p, i) {
+  const st = labEstadoVisual(t, p);
+  p.eventos = labEventos(t, p);
+  const icone = st === 'done' ? 'check' : (st === 'failed' ? 'x' : '');
+  const num = icone ? `<i data-lucide="${icone}"></i>` : '';
+  const cls = `exec-step${st === 'done' ? ' done' : ''}${st === 'active' ? ' active' : ''}${st === 'failed' ? ' failed' : ''}`;
+  const dim = st === 'pending' ? 'opacity:0.55;' : '';
+
+  // Corpo = os blocos que o passo declarou + o histórico, quando aberto. Cada peça vai
+  // EMBRULHADA e o corpo é uma coluna com gap: sem isso as peças ficam coladas (o acordeon
+  // de comentários encostava no texto da atuação, parecendo estar por cima dele). O embrulho
+  // é necessário porque um bloco pode devolver mais de um elemento — os dados da solicitação,
+  // por exemplo, devolvem rótulo + card + botão, e o gap não pode separar esses três.
+  const blocos = (p.blocos || []).map((bl) => labBloco(t, bl)).filter(Boolean);
+  const recolhivel = st === 'done' && blocos.length > 0;
+  const pecas = (recolhivel && !_lab.expandido[i]) ? [] : blocos;
+  const corpo = pecas.length ? `<div class="step-corpo">${pecas.map((x) => `<div>${x}</div>`).join('')}</div>` : '';
+
+  return `<div class="${cls}" style="${dim}flex-direction:column;align-items:stretch;">
+    <div class="exec-step-header${recolhivel ? ' collapsible' : ''}"${recolhivel ? ` onclick="labPassoToggle(${i})"` : ''}>
+      <div class="step-num${icone ? '' : ' pend'}">${num}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="lab-titulo-hora" style="margin-bottom:4px;">
+          <span style="font-weight:600;">${esc(p.nome)}</span>
+          ${(p.quando && st !== 'failed') ? `<span class="step-sep"></span><span class="step-when">${esc(p.quando)}</span>` : ''}
+        </div>
+        ${p.desc ? `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.55;">${esc(p.desc)}</div>` : ''}
+      </div>
+      <div class="step-side">${labPassoEstado(t, p, i)}${labPassoHist(t, p, i, { recolhivel })}</div>
+    </div>
+    ${corpo ? `<div style="margin-top:14px;">${corpo}</div>` : ''}
+  </div>`;
+}
+
+/* ---------- os dados da solicitação ---------- */
+function labDadosSolicitacao(t, opts) {
+  const o = opts || {};
+  if (!(_tsmSecoes(t) || []).length) return `<div class="lab-vazio">Esta solicitação não trouxe formulário — o pedido do cliente está na conversa.</div>`;
+  labFormData(t);
+  const titulo = ('titulo' in o) ? o.titulo : 'Dados da solicitação original';
+  const label = titulo ? `<div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:10px;">${esc(titulo)}</div>` : '';
+  return `${label}${renderFormReference(t, !!o.primeiroAberto)}`;
+}
+
+/* O bloco de campos da Validação. O markup é o do #screen-task (cockpit-core.js): os ids
+   #form-collab-strip / #form-tabs / #form-edit-btn / #form-content existem porque é NELES que o
+   `renderForm` do núcleo escreve — o lab só entrega a casca e chama a função depois de montar
+   (labPintaForm). Zero markup de formulário próprio.
+   O botão Editar do núcleo é substituído quando o lab precisa mudar o gesto: em leitura ele fica
+   desativado, e numa visita a uma etapa passada ele abre o modal de voltar pra Validação. */
+function labFormBloco(t) {
+  labFormData(t);
+  return `<div id="form-collab-strip"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+      <div class="form-tabs" id="form-tabs"></div>
+      <div id="form-edit-btn"></div>
+    </div>
+    <div id="form-content"></div>`;
+}
+
+/* Chamado depois de cada render: pinta o formulário (abas + campos) e os anexos com as funções do
+   núcleo, e só então ajusta o botão Editar pro modo da tela. */
+function labPintaForm(t) {
+  if (!document.getElementById('form-content')) return;
+  renderForm(t, _lab.aba || null);
+  renderClientAttachments(t);
+  labAjustaEditar(t);
+  refreshIcons();
+}
+
+/* Anexar e remover documento no último passo são as funções do núcleo (`handleFileSelect` →
+   `addFilesToGdocs`, `removeGdocsFile`), chamadas de dentro do card que ele mesmo desenha. Elas
+   terminam pedindo `renderExecution(task)`, que escreve nos ids da tela de execução do fluxo — que
+   não existem aqui. Redirecionar pro labRender é o que faz o anexo funcionar sem duplicar nada. */
+if (typeof renderExecution === 'function') {
+  window.renderExecution = function () { if (_lab.t) labRender(); };
+}
+
+/* Salvar e Cancelar são os do núcleo — eles repintam só o bloco do formulário (`renderForm`), o
+   que é bom: o resto da tela não pisca. O problema é que, ao repintar, o botão Editar volta a ser
+   o do núcleo e perde o ajuste de modo do lab. Daí o embrulho: chama o original e reajusta. */
+['saveEdits', 'cancelEdits', 'enterEditMode'].forEach((nome) => {
+  const original = window[nome];
+  if (typeof original !== 'function') return;
+  window[nome] = function () {
+    original.apply(null, arguments);
+    if (_lab.t) labAjustaEditar(_lab.t);
+    refreshIcons();
+  };
+});
+
+// `labPosse` já devolve 'encerrada' para concluída/cancelada, então só 'minha' passa.
+function labPodeEditar(t) { return labPosse(t) === 'minha'; }
+
+function labAjustaEditar(t) {
+  const cx = document.getElementById('form-edit-btn');
+  if (!cx) return;
+  const btn = Array.from(cx.querySelectorAll('button')).find((b) => /Editar/.test(b.textContent));
+  if (!btn) return; // em modo de edição o núcleo não desenha o botão
+  if (!labPodeEditar(t)) {
+    btn.disabled = true;
+    btn.style.opacity = '0.45';
+    btn.style.cursor = 'not-allowed';
+    btn.onclick = null;
+    const motivo = {
+      encerrada: 'A tarefa está encerrada: os dados não mudam mais.',
+      ninguem: 'A tarefa não tem dono. Atribua a você para editar.',
+      outro: 'A tarefa é de outro operador.',
+      robo: 'Esta tarefa é do robô.',
+    };
+    btn.title = motivo[labPosse(t)] || 'Os dados não podem ser editados.';
+    return;
+  }
+  // Visita a uma etapa já vivida: editar tem consequência (a tarefa REGRIDE e o cliente vê),
+  // então o gesto passa pelo modal em vez de abrir os campos direto.
+  if (labVisitando(t)) btn.onclick = () => labVoltarValidacao({ editar: true });
+}
+
+/* ---------- miolo da VALIDAÇÃO ---------- */
+function labEsperaCard(t) {
+  if (!labEmEspera(t)) return '';
+  return `<div style="background:var(--warning-soft);border:1px solid #f59e0b;border-radius:10px;padding:12px 14px;font-size:13px;color:var(--warning);display:flex;gap:10px;align-items:flex-start;">
+    <i data-lucide="clock" class="w-4 h-4" style="flex-shrink:0;margin-top:2px;"></i>
+    <div><div style="font-weight:600;">Aguardando o cliente${t.stationedAt ? ` desde ${esc(labQuandoExato(t, t.stationedAt))}` : ''}</div>
+    <div style="margin-top:2px;">${esc(t.stationedReason || 'Falta um complemento para dar sequência.')}</div></div>
+  </div>`;
+}
+
+function labValidacao(t) {
+  const posse = labPosse(t);
+  const visita = labVisitando(t);
+
+  // Só no caso de leitura a tela precisa dizer por que não há decisão nenhuma. Em `?ro=1` a
+  // tarefa É sua — então o motivo não é posse, é o modo em que você entrou.
+  let nota = '';
+  if (!labPodeAgir(t)) {
+    // Em leitura a nota diz o que NÃO se faz. Quando a tarefa é sua, editar os dados continua
+    // valendo (labPodeEditar) — a frase precisa dizer isso, senão contradiz o botão ativo ao lado.
+    if (posse === 'ninguem') nota = '<p style="color:var(--text-secondary);font-size:13px;margin:14px 0 20px;">A tarefa ainda não tem dono: aqui é leitura. Para conferir os dados e dar sequência, atribua a você.</p>';
+    else if (posse === 'encerrada') nota = '<p style="color:var(--text-secondary);font-size:13px;margin:14px 0 20px;">A tarefa já foi encerrada: o que você vê é o registro do que foi feito. Comentar nos eventos continua aberto.</p>';
+    else nota = '<p style="color:var(--text-secondary);font-size:13px;margin:14px 0 20px;">Você está lendo uma tarefa que não é sua: os controles ficam desativados.</p>';
+  }
+
+  const podeDecidir = labPodeAgir(t);
+  const motivoDecisao = posse === 'ninguem'
+    ? 'A tarefa não tem dono — atribua a você para decidir'
+    : 'Só quem está com a tarefa decide';
+  const desligaDecisao = podeDecidir ? '' : ` disabled title="${motivoDecisao}" style="opacity:0.45;cursor:not-allowed;"`;
+  const decisao = !visita
+    ? `<div class="decision-card">
+        <div class="decision-title">Dados da solicitação — tem tudo que é necessário para processar?</div>
+        <div class="decision-desc">Confira se os dados do formulário e os anexos do cliente estão completos e corretos para prosseguir com o processamento.</div>
+        <div class="decision-btns">
+          <button class="btn-decision-yes" ${podeDecidir ? 'onclick="labAceitarTarefa()"' : desligaDecisao}><i data-lucide="check" class="w-4 h-4"></i>Sim, processar</button>
+          <button class="btn-decision-no" ${podeDecidir ? 'onclick="labConversaAbrir()"' : desligaDecisao}><i data-lucide="message-circle" class="w-4 h-4"></i>Não, pedir algo ao cliente</button>
+        </div>
+      </div>`
+    : '';
+
+  const temForm = !!(_tsmSecoes(t) || []).length;
+  const corpo = temForm
+    ? labFormBloco(t)
+    : `<div class="lab-vazio">Esta solicitação não trouxe formulário — o pedido do cliente está na conversa.</div>`;
+
+  /* Dois cards, na ordem do projeto: Dados da solicitação, depois Anexos enviados pelo cliente.
+     O card de anexos é o #attachments-block do núcleo — os ids são o que o
+     `renderClientAttachments` procura pra preencher a contagem e a lista. */
+  return `<div class="section-card">
+    <div class="section-title" style="margin-bottom:0;"><i data-lucide="file-text"></i>Dados da solicitação</div>
+    ${nota}
+    ${labEsperaCard(t) ? `<div style="margin:${nota ? '16px' : '18px'} 0 18px;">${labEsperaCard(t)}</div>` : ''}
+    <div style="margin-top:${(nota || labEsperaCard(t)) ? '0' : '18px'};">${corpo}</div>
+  </div>
+  <div class="section-card" id="attachments-block">
+    <div class="section-title"><i data-lucide="paperclip"></i>Anexos enviados pelo cliente<span id="attachments-count-badge" class="badge badge-neutral" style="margin-left:8px;font-size:10px;">0</span></div>
+    <div class="flex flex-wrap gap-2" id="attachments-list"></div>
+  </div>${decisao}`;
+}
+
+function labFimDoRoteiro(t, passos) {
+  const tipo = labTipo(t);
+  const encerrada = t.status === 'completed';
+
+  const alu = aluEhAluguel(t);
+  if (!encerrada) {
+    if (tipo !== 'hitl') return '';
+    return `<div class="lab-fim">
+      <div class="lab-fim-linha"><span class="lab-fim-selo"><i data-lucide="circle-check"></i>Tarefa devolvida ao Autopilot</span></div>
+      <div class="lab-fim-sub">${alu ? 'O Motor Fiscal segue a apuração a partir daqui.' : 'O motor está reprocessando a partir daqui.'}</div>
+    </div>`;
+  }
+
+  // Quem concluiu + quando. A hora é a do ÚLTIMO passo, não um relógio à parte: o processo
+  // acabou quando o último passo acabou.
+  let quem, quando;
+  if (tipo === 'robo') {
+    quem = 'Autopilot';
+    quando = (passos[passos.length - 1] || {}).quando || _apTime(passos.length);
+  } else if (tipo === 'hitl') {
+    const atu = labUltimaAtuacao(t);
+    quem = (atu && atu.nome) ? atu.nome.split(' · ')[0] : ((acOp(t.operatorId) || {}).nome || OPERATOR_NAME);
+    quando = (alu && t.aluguel.enviado) ? t.aluguel.enviado.quando : _apTime(t.apDone || 1);
+  } else {
+    quem = (acOp(t.operatorId) || {}).nome || OPERATOR_NAME;
+    quando = (passos[passos.length - 1] || {}).quando || '';
+  }
+
+  return `<div class="lab-fim">
+    <div class="lab-fim-linha"><span class="lab-fim-selo"><i data-lucide="circle-check"></i>Tarefa concluída</span></div>
+    <div class="lab-fim-sub">Concluída por <strong style="color:var(--text-secondary);">${esc(quem)}</strong>${quando ? ` <span style="color:var(--text-tertiary);">·</span> ${esc(quando)}` : ''}</div>
+  </div>`;
+}
+
+function labExecucao(t) {
+  // Cancelada: não tem passos, mas a conversa com o cliente continua sendo o registro
+  // de por que aquilo não andou — some do roteiro, não da tela.
+  if (t.status === 'cancelled') {
+    return `<div class="section-card">
+      <div class="section-title" style="margin-bottom:0;"><i data-lucide="list-checks"></i>Execução</div>
+      <div class="lab-vazio" style="margin-top:14px;">A tarefa foi cancelada antes de ser processada — não há passos executados.</div>
+    </div>`;
+  }
+  const passos = labRoteiro(t);
+  if (!passos.length) return '';
+  const acima = [labEsperaCard(t)].filter(Boolean);
+  let body = acima.length ? `<div style="display:flex;flex-direction:column;gap:14px;margin-bottom:18px;">${acima.map((x) => `<div>${x}</div>`).join('')}</div>` : '';
+  let grupo = null;
+  passos.forEach((p, i) => {
+    if (p.grupo && p.grupo !== grupo) { body += `<div class="lab-grupo">${esc(p.grupo)}</div>`; grupo = p.grupo; }
+    body += labPasso(t, p, i);
+  });
+  body += labFimDoRoteiro(t, passos);
+  // O texto de apoio muda com QUEM executa o roteiro: no robô os passos são do motor
+  // (ninguém marca à mão); no HITL o roteiro é o registro do que você fez; no DP, de quem
+  // está com a tarefa.
+  const posse = labPosse(t);
+  let nota;
+  if (aluEhAluguel(t)) {
+    nota = 'Os dados preenchidos estão registrados abaixo. O Motor Fiscal segue a apuração a partir daqui.';
+  } else if (labTipo(t) === 'hitl') {
+    nota = 'O que você respondeu está registrado abaixo. O Autopilot seguiu o processo a partir daqui.';
+  } else if (labEhAutopilot(t)) {
+    nota = labPodeAgir(t)
+      ? 'Os passos são executados pelo Autopilot: você resolve a anomalia e devolve ao motor. Os eventos de cada passo guardam as tentativas e os comentários.'
+      : 'Os passos avançam pelo motor do Autopilot. Você pode ler tudo e comentar em qualquer evento.';
+  } else if (labPodeAgir(t)) {
+    nota = 'Marque cada passo como feito para avançar.';
+  } else if (labPosse(t) === 'encerrada') {
+    nota = 'A tarefa já foi encerrada: o que você vê é o registro do que foi feito. Comentar nos eventos continua aberto.';
+  } else {
+    nota = 'Você está lendo uma tarefa que não é sua: os controles ficam desativados.';
+  }
+  return `<div class="section-card">
+    <div class="section-title" style="margin-bottom:0;"><i data-lucide="list-checks"></i>Execução</div>
+    <p style="color:var(--text-secondary);font-size:13px;margin:14px 0 20px;">${nota}</p>
+    <div>${body}</div>
+  </div>`;
+}
+
+// Só existe quando há cliente do outro lado — nunca numa tarefa do robô, onde o botão
+// simplesmente não é emitido e o Histórico fica sozinho na direita.
+function labConversaBtn(t) {
+  if (labEhAutopilot(t)) return '';
+  const n = labMsgs(t).length;
+  const dot = t.labClienteRespondeu ? `<span class="lab-dot" title="O cliente respondeu e você ainda não abriu"></span>` : '';
+  return `<button class="lab-conversa-btn" onclick="labConversaAbrir()">${dot}<i data-lucide="message-square" style="width:15px;height:15px;"></i>Conversa com o cliente${n ? ` <span style="color:var(--text-tertiary);">(${n})</span>` : ''}</button>`;
+}
+
+/* ---------- eventos do passo (PAINEL LATERAL) ----------
+   Foram popover, depois acordeon dentro do passo, e (COCKPIT-1323) são painel — o
+   mesmo que já servia o Histórico e a Conversa. O que decidiu foi a separação: dentro do passo,
+   o que se usa pra EXECUTAR e o REGISTRO do que aconteceu dividiam a mesma caixa.
+   O TÍTULO DO PAINEL É O DO PASSO (nome + descrição): quem abriu precisa saber de qual passo
+   está lendo o registro, e esses dois textos já existem no cabeçalho — nenhum rótulo novo.
+   O passo é relido de `labRoteiro` a cada abertura: os comentários vivem na tarefa e o roteiro
+   se remonta, então o painel sempre mostra o estado de agora. */
+function labEventosAbrir(i) {
+  const t = _lab.t;
+  const p = (labRoteiro(t) || [])[i];
+  if (!p) return;
+  // Depois do labDrawerAbrir: ele fecha o painel anterior, e fechar limpa estes dois.
+  labDrawerAbrir({ titulo: p.nome, sub: p.desc || '', corpo: labEventosCorpo(t, i) });
+  _lab.drawerQual = 'eventos';
+  _lab.evPasso = i;
+}
+
+/* Comentar redesenha a tela (a contagem do botão muda), e o painel tem que acompanhar sem
+   piscar: só o corpo é reescrito, o painel não reabre. Chamado do labRender. */
+function labEventosRedesenhar() {
+  const body = document.querySelector('#lab-drawer-bd .lab-drawer-body');
+  if (!body || _lab.evPasso === null) return;
+  body.innerHTML = labEventosCorpo(_lab.t, _lab.evPasso);
+  refreshIcons();
+}
+
+function labEventosCorpo(t, i) {
+  const p = (labRoteiro(t) || [])[i];
+  if (!p) return '';
+  p.eventos = labEventos(t, p);
+  return labHistHTML(t, p, i);
+}
+
+// Quem executou: o robô é o Autopilot, o HITL é quem atuou, o DP é o dono da tarefa.
+function labQuemExecutou(t, ev) {
+  if (ev && ev.quem) return ev.quem;
+  const tipo = labTipo(t);
+  if (tipo === 'robo') return 'Autopilot';
+  if (tipo === 'hitl') {
+    const atu = labUltimaAtuacao(t);
+    if (atu && atu.nome) return atu.nome.split(' · ')[0];
+  }
+  return (acOp(t.operatorId) || {}).nome || '';
+}
+
+function labHistHTML(t, p, i) {
+  const linhas = (p.eventos || []).map((h, k) => {
+    const erro = h.tipo === 'erro';
+    // O evento pode trazer rótulo próprio; sem ele, quem nomeia a linha é o estado.
+    const rotulo = h.rotulo || LAB_EV_ROTULO[h.tipo] || (erro ? 'Falhou' : 'Concluído com sucesso');
+    /* Texto do evento. Na falha é o que o motor devolveu — inclusive o da falha que está travando
+       o passo agora, que vem para cá em vez de ficar num card solto (labEventos). Se
+       ele repetiria a descrição do passo, o sucesso cai na nota de marcação (labEvNota). */
+    const proprio = (h.texto && h.texto !== p.desc) ? h.texto : '';
+    const texto = proprio || (erro ? '' : labEvNota(t));
+    const titulo = `<div class="lab-titulo-hora"><span class="lab-try-text" style="font-weight:600;">${esc(rotulo)}</span>${h.quando ? `<span class="step-sep"></span><span class="lab-try-when">${esc(h.quando)}</span>` : ''}</div>`;
+    const quem = labQuemExecutou(t, h);
+    const porQuem = quem ? `<div class="lab-try-quem">Por ${esc(quem)}</div>` : '';
+    const corpo = erro
+      ? `${titulo}${texto ? `<div class="ta-err"><div class="ta-err-text">${esc(texto)}</div></div>` : ''}${porQuem}`
+      : `${titulo}${texto ? `<div class="ta-det">${esc(texto)}</div>` : ''}${porQuem}`;
+    const chave = i + '.' + k;
+    return `<div class="lab-try ${erro ? 'erro' : 'ok'}">
+      <i data-lucide="${erro ? 'circle-x' : 'circle-check'}"></i>
+      <div style="min-width:0;flex:1;">
+        <div class="lab-try-head">
+          <div style="min-width:0;flex:1;">${corpo}</div>
+          <button class="step-cmt lab-try-cmt" title="Comentar neste evento" onclick="labComentarLanc(${i}, ${k})"><i data-lucide="message-square-plus"></i></button>
+        </div>
+        ${apCmpHTML(h.comparativo)}
+        ${h.need ? apNeedBlock(h.need) : ''}
+        ${h.link ? `<button class="ap-crosslink" style="margin-top:9px;font-size:11px;padding:5px 10px;" onclick="acNavModal('${h.link.to}')"><i data-lucide="external-link" style="width:14px;height:14px;"></i>${esc(h.link.label)}</button>` : ''}
+        ${labFalas(h.coment || [], 'lanc')}
+        ${_lab.lancAberto[chave] ? labCmtForm(i, k) : ''}
+      </div></div>`;
+  }).join('');
+
+  if (!linhas) return '';
+  return `<div class="lab-try-lista">${linhas}</div>`;
+}
+
+/* Fala de gente. `onde === 'lanc'` põe recuo e FIO À ESQUERDA: é o que mostra que o
+   comentário está pendurado num lançamento, e não no passo. Sem esse fio, um comentário
+   dentro do lançamento parecia só mais um comentário do passo. */
+function labFalas(lista, onde) {
+  if (!lista.length) return '';
+  const cls = onde === 'lanc' ? 'lab-fala lab-fala-em-lanc' : 'lab-fala';
+  return lista.map((c) => `
+    <div class="${cls}">
+      ${labAvatar(c.autor)}
+      <div style="min-width:0;flex:1;">
+        <div class="lab-fala-who">${esc(String(c.autor).split(' · ')[0])}<span class="lab-fala-when">${esc(c.quando || '')}</span></div>
+        <div class="lab-fala-text">${esc(c.texto)}</div>
+        ${(c.anexos && c.anexos.length) ? `<div class="ta-anexos">${c.anexos.map((x) => materialChip(x)).join('')}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+function labCmtForm(i, k) {
+  const chave = i + '.' + k;
+  const rascunho = _lab.rascunho[chave] || '';
+  const arqs = _lab.anexos[chave] || [];
+  const arg = `'${chave}', ${i}, ${k}`;
+  const lista = arqs.length
+    ? `<div class="lab-cmt-arqs">${arqs.map((a, n) => `<div class="material-chip">
+        <i data-lucide="paperclip"></i><span class="material-chip-name">${esc(a.name)}</span>
+        <div class="material-chip-actions"><button class="material-chip-btn" title="Remover" onclick="labAnexoRemover('${chave}', ${n})"><i data-lucide="x"></i></button></div>
+      </div>`).join('')}</div>`
+    : '';
+  return `<div class="lab-cmt-box em-lanc">
+    <div class="lab-cmt-form${rascunho.trim() ? ' com-texto' : ''}" id="lab-cmt-form-${chave}">
+      ${labAvatar(OPERATOR_NAME)}
+      <textarea id="lab-cmt-${chave}" rows="1" placeholder="Comentar neste evento…"
+        oninput="labRascunho('${chave}', this.value)"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();labComentar(${arg});}">${esc(rascunho)}</textarea>
+      <button class="lab-cmt-send" title="Comentar (Enter)" onclick="labComentar(${arg})"><i data-lucide="arrow-up"></i></button>
+    </div>
+    ${lista}
+    <div class="lab-cmt-hint">
+      <input type="file" id="lab-cmt-file-${chave}" multiple style="display:none;" onchange="labAnexoEscolher('${chave}', this)" />
+      <button class="lab-cmt-clip" title="Anexar arquivo" onclick="document.getElementById('lab-cmt-file-${chave}').click()"><i data-lucide="paperclip"></i>Anexar</button>
+      <span class="lab-cmt-sep"></span>
+      <i data-lucide="lock"></i>Comentário interno — o cliente não vê.
+    </div>
+  </div>`;
+}
+
+function labAnexoEscolher(chave, input) {
+  const novos = Array.from(input.files || []).map((f) => ({ name: f.name, tag: 'Documento' }));
+  if (!novos.length) return;
+  _lab.anexos[chave] = (_lab.anexos[chave] || []).concat(novos);
+  input.value = '';
+  labRender();
+}
+function labAnexoRemover(chave, n) {
+  const lista = _lab.anexos[chave] || [];
+  const arq = lista[n];
+  if (!arq) return;
+  confirmRemoveAttachment(arq.name, () => {
+    lista.splice(n, 1);
+    if (!lista.length) delete _lab.anexos[chave];
+    labRender();
+  });
+}
+
+// Avatar de iniciais — mesmo gradiente do avatar do shell, em tamanho de linha.
+function labAvatar(nome) {
+  const iniciais = String(nome || '?').replace(/ · .*$/, '').split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
+  return `<div class="lab-av">${esc(iniciais)}</div>`;
+}
+/* Guarda o rascunho, mostra o botão de enviar e faz o campo CRESCER — tudo sem re-renderizar,
+   senão quem está digitando perde o foco. O crescer é o truque de sempre: zera a altura e
+   adota a altura do conteúdo (scrollHeight), com teto pra não virar uma página. */
+function labRascunho(chave, valor) {
+  _lab.rascunho[chave] = valor;
+  const form = document.getElementById('lab-cmt-form-' + chave);
+  if (form) form.classList.toggle('com-texto', !!valor.trim());
+  const ta = document.getElementById('lab-cmt-' + chave);
+  if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 150) + 'px'; }
+}
+/* Comentar é permitido SEMPRE (tarefa de outro, do robô, encerrada) — é anotação, não ação
+   sobre a tarefa. Só o operador comenta; o robô nunca.
+   O comentário fica pendurado no EVENTO k (campo `lanc`) e aparece embaixo dele, recuado.
+   Comentário só com anexo vale: mandar a planilha sem escrever nada já diz algo. */
+function labComentar(chave, i, k) {
+  const txt = (_lab.rascunho[chave] || '').trim();
+  const arqs = (_lab.anexos[chave] || []).slice();
+  if (!txt && !arqs.length) return;
+  const t = _lab.t;
+  const cmt = { autor: OPERATOR_NAME + ' · operadora', quando: labAgoraPasso(), texto: txt, lanc: k, anexos: arqs };
+  t.labComent = t.labComent || {};
+  t.labComent[i] = (t.labComent[i] || []).concat([cmt]);
+  _lab.rascunho[chave] = '';
+  delete _lab.anexos[chave];
+  // O painel fica aberto e se redesenha (labRender chama labEventosRedesenhar): o comentário
+  // aparece onde foi escrito, e a contagem do botão sobe no passo, atrás do painel.
+  labRender();
+  flash('Comentário registrado no evento.', 'success');
+}
+// O balão do evento abre o campo dele ali mesmo (e nunca fecha — abrir é o que o ícone promete).
+function labComentarLanc(i, k) {
+  const chave = i + '.' + k;
+  if (!_lab.lancAberto[chave]) {
+    _lab.lancAberto[chave] = true;
+    labRender();
+  }
+  const ta = document.getElementById('lab-cmt-' + chave);
+  if (ta) { ta.focus(); ta.scrollIntoView({ block: 'nearest' }); }
+}
+
+/* ---------- painel lateral (um chassi, vários conteúdos) ----------
+   Dois painéis usam isto: a Conversa com o cliente e o Histórico. Um só chassi porque são
+   a mesma coisa pra quem usa — algo que desliza da direita, por cima, sem tirar você da
+   tela. Painel novo = só o conteúdo.
+   O deslizar é feito em dois quadros: injeta fora da tela e, no quadro seguinte, liga a
+   classe .aberto — sem isso o browser não anima (não há transição de "não existia" pra
+   "existe"). Ao fechar, espera a animação antes de remover do DOM. */
+function labDrawerAbrir(cfg) {
+  labDrawerFechar(true); // um painel por vez
+  const bd = document.createElement('div');
+  bd.className = 'lab-drawer-bd';
+  bd.id = 'lab-drawer-bd';
+  bd.onclick = (e) => { if (e.target === bd) labDrawerFechar(); };
+  bd.innerHTML = `<aside class="lab-drawer" onclick="event.stopPropagation()">
+    <div class="lab-drawer-head">
+      <div style="flex:1;min-width:0;">
+        <div class="lab-drawer-title">${esc(cfg.titulo || '')}</div>
+        ${cfg.sub ? `<div class="lab-drawer-sub">${esc(cfg.sub)}</div>` : ''}
+      </div>
+      <button class="btn btn-ghost" style="padding:6px;" onclick="labDrawerFechar()"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div class="lab-drawer-body">${cfg.corpo || ''}</div>
+    ${cfg.rodape ? `<div class="lab-drawer-foot">${cfg.rodape}</div>` : ''}
+  </aside>`;
+  document.body.appendChild(bd);
+  requestAnimationFrame(() => bd.classList.add('aberto'));
+  _lab.drawer = true;
+  refreshIcons();
+  if (cfg.fim) labDrawerAoFim();
+}
+
+function labDrawerAoFim() {
+  const b = document.querySelector('#lab-drawer-bd .lab-drawer-body');
+  if (!b) return;
+  b.scrollTop = b.scrollHeight;
+  // Os ícones entram depois (refreshIcons troca <i> por <svg>) e a altura muda — repete no
+  // quadro seguinte pra não parar no meio da última mensagem.
+  requestAnimationFrame(() => { b.scrollTop = b.scrollHeight; });
+}
+function labDrawerFechar(imediato) {
+  const bd = document.getElementById('lab-drawer-bd');
+  _lab.drawer = false;
+  _lab.drawerQual = null;
+  _lab.evPasso = null;
+  if (!bd) return;
+  if (imediato) { bd.remove(); return; }
+  bd.classList.remove('aberto');
+  setTimeout(() => bd.remove(), 240); // igual à transição do CSS
+}
+
+/* ---------- conversa com o cliente ---------- */
+function labMsgs(t) { return _tsmMsgs(t) || []; }
+function labConversaRodape(t) {
+  const posse = labPosse(t);
+  const nota = (txt) => `<div class="lab-drawer-nota"><i data-lucide="info" style="width:15px;height:15px;flex-shrink:0;margin-top:1px;"></i><div>${txt}</div></div>`;
+
+  // Tarefa encerrada é o único caso em que o campo NÃO aparece: o canal fechou pra todo
+  // mundo, pra sempre — a ação não existe mais no tempo (mesma família da visita).
+  if (posse === 'encerrada') {
+    return nota(t.status === 'cancelled'
+      ? 'Esta tarefa foi <strong>cancelada</strong> e por isso não permite mais troca de mensagens.'
+      : 'Esta tarefa já foi <strong>concluída</strong> e por isso não permite mais troca de mensagens.');
+  }
+  if (posse !== 'minha') {
+    const aviso = 'Só quem está com a tarefa responde ao cliente. Aqui a conversa é leitura.';
+    const motivo = 'Só quem está com a tarefa responde ao cliente';
+    return `${nota(aviso)}
+      <textarea placeholder="Escreva para o cliente…" disabled style="opacity:0.5;cursor:not-allowed;" title="${motivo}"></textarea>
+      <div style="margin-top:10px;opacity:0.5;cursor:not-allowed;" title="${motivo}"><button class="lab-anexar-btn" disabled style="cursor:not-allowed;"><i data-lucide="paperclip" style="width:14px;height:14px;"></i>Anexar arquivo</button></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-primary" disabled style="opacity:0.5;cursor:not-allowed;" title="${motivo}"><i data-lucide="send" class="w-4 h-4"></i>Enviar</button>
+      </div>`;
+  }
+
+  const campo = `<textarea placeholder="Escreva para o cliente…" oninput="labRespBtn()" id="lab-resp-input"></textarea>${labRespAnexoCampo()}`;
+  if (labEmEspera(t)) {
+    return `${campo}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;">
+        <span style="font-size:11.5px;color:var(--text-tertiary);">A tarefa já está em espera aguardando o cliente.</span>
+        <button class="btn btn-primary" id="lab-resp-btn" disabled style="opacity:0.5;cursor:not-allowed;" onclick="labResponder()"><i data-lucide="send" class="w-4 h-4"></i>Enviar</button>
+      </div>`;
+  }
+  // Vem marcado: pedir algo ao cliente é o motivo mais comum de escrever pra ele, e era o
+  // comportamento que o rodapé já anunciava. Quem só quer avisar desmarca.
+  return `${campo}
+    <label class="lab-espera-opt">
+      <input type="checkbox" id="lab-espera-chk" ${_lab.espera ? 'checked' : ''} onchange="labEsperaToggle(this.checked)" />
+      <span>Colocar a tarefa em espera aguardando o cliente</span>
+    </label>
+    <div class="lab-espera-aviso" id="lab-espera-aviso" style="${_lab.espera ? '' : 'display:none;'}">
+      <i data-lucide="alert-triangle"></i>
+      <div>A fase atual fica marcada como <strong>aguardando cliente</strong>, e no Hub ele vê <strong>Aguardando retorno</strong>. Você é avisado quando ele responder.</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+      <button class="btn btn-primary" id="lab-resp-btn" disabled style="opacity:0.5;cursor:not-allowed;" onclick="labResponder()"><i data-lucide="send" class="w-4 h-4"></i><span id="lab-resp-label">${_lab.espera ? 'Enviar e colocar em espera' : 'Enviar'}</span></button>
+    </div>`;
+}
+
+function labConversaAbrir() {
+  const t = _lab.t;
+  const msgs = labMsgs(t);
+  labDrawerAbrir({
+    titulo: 'Conversa com o cliente',
+    sub: `${t.clientName || ''} · ${t.senderName || ''}`,
+    corpo: msgs.length
+      ? `<div class="history-list">${msgs.map((m) => renderHistoryMessage(Object.assign({}, m, { timestamp: labQuandoExato(t, m.timestamp) }), t)).join('')}</div>`
+      : `<div class="lab-vazio">Nenhuma mensagem trocada com o cliente nesta tarefa.</div>`,
+    rodape: labConversaRodape(t),
+    fim: true, // a última mensagem é o que importa — ver labDrawerAoFim
+  });
+  _lab.drawerQual = 'conversa';
+  // Abriu a conversa → o sinal de "o cliente respondeu e você não viu" morre. Nas duas
+  // superfícies: a bolinha do botão e a do sino contam a MESMA coisa, então apagam junto.
+  labNotifMsgLidas();
+  if (t.labClienteRespondeu) { t.labClienteRespondeu = false; labRender(); }
+}
+
+// A opção muda o rótulo do botão e mostra a consequência — sem reabrir o painel.
+function labEsperaToggle(marcado) {
+  _lab.espera = !!marcado;
+  const lbl = document.getElementById('lab-resp-label');
+  if (lbl) lbl.textContent = marcado ? 'Enviar e colocar em espera' : 'Enviar';
+  const av = document.getElementById('lab-espera-aviso');
+  if (av) av.style.display = marcado ? '' : 'none';
+}
+function labConversaFechar() { labDrawerFechar(); }
+
+/* ---------- chegou mensagem do cliente com a tarefa aberta ---------- */
+const LAB_MSG_CLIENTE = [
+  {
+    texto: 'Achei aqui o comprovante de escolaridade que faltava — segue em anexo.',
+    arquivos: [{ name: 'Certificado-ensino-medio-Juliana.pdf', size: '96 KB' }],
+  },
+  {
+    texto: 'O RG que mandei está com o nome errado. Segue o documento certo, digitalizado agora.',
+    arquivos: [{ name: 'RG-Juliana-Prado-Martins.pdf', size: '148 KB' }],
+  },
+  { texto: 'Oi! Esqueci de avisar: a Juliana vai começar dia 12, não dia 09. Consegue ajustar antes de fechar?' },
+  { texto: 'Uma dúvida: o vale-transporte entra já nesse primeiro mês ou só no seguinte?' },
+];
+
+// A notificação de mensagem só existe pra apagar quando o operador abre a conversa: as duas
+// bolinhas dizem a mesma coisa, então uma não pode sobreviver à outra.
+function labNotifMsgLidas() {
+  let mudou = false;
+  (state.notifications || []).forEach((n) => { if (n.labMsg && n.unread) { n.unread = false; mudou = true; } });
+  if (mudou) renderNotifications();
+}
+
+function labChegouMensagemCliente() {
+  const t = _lab.t;
+  if (!t) return;
+  if (labTipo(t) !== 'cliente') { flash('Esta tarefa é do robô — não existe conversa com cliente aqui.', 'warning'); return; }
+  if (t.status === 'completed' || t.status === 'cancelled') {
+    flash('A tarefa está encerrada — no Hub o cliente não consegue mais responder nesta solicitação.', 'warning');
+    return;
+  }
+  const msg = LAB_MSG_CLIENTE[_lab.msgIdx++ % LAB_MSG_CLIENTE.length];
+  const arqs = (msg.arquivos || []).slice();
+  // labMsgs, não t.messages: em espera a conversa pode vir do fallback do núcleo, e
+  // concatenar sobre t.messages jogaria fora o que a tela está mostrando.
+  const quando = labAgora();
+  t.messages = labMsgs(t).concat([{ from: 'client', text: msg.texto, timestamp: quando, attachments: arqs }]);
+  t.respondedAt = quando;
+  // Arquivo que chega na conversa também entra na pilha "Anexos enviados pelo cliente" — regra do
+  // núcleo (04-comunicacao-cliente.md § Anexos em mensagens). Fica nos dois lugares de propósito:
+  // dentro da mensagem que o trouxe, e na lista de quem procura "todos os arquivos da tarefa".
+  if (arqs.length) t.attachments = (t.attachments || []).concat(arqs);
+  // Em espera, a resposta do cliente libera a tarja — é a regra que a tela já tem.
+  if (t.status === 'stationed') t.clientResponded = true;
+
+  // Já está com a conversa aberta? Então não há o que sinalizar: a mensagem entra na frente
+  // dele. Bolinha é pra quem não viu.
+  const vendo = _lab.drawerQual === 'conversa';
+  if (!vendo) t.labClienteRespondeu = true;
+  state.notifications.unshift({
+    id: Date.now(), labMsg: true, unread: !vendo,
+    text: `${t.clientName || 'Cliente'} respondeu na solicitação de ${t.type || 'DP'}`,
+    time: quando,
+  });
+  renderNotifications();
+  labRender();
+  if (vendo) labConversaAbrir(); // redesenha o painel com a mensagem nova
+}
+// Substitui o gatilho do núcleo SÓ nesta tela: mesmo botão do sino, alvo diferente.
+window.simularRespostaCliente = labChegouMensagemCliente;
+
+/* O ponto do sino é rosa no núcleo (aviso genérico). Quando o não lido é mensagem de cliente,
+   ele veste a bolinha azul — no sino e no item da lista. Envelope em cima do render do
+   núcleo: nada do shell é reescrito, só pintado depois. */
+const _labNotifBase = window.renderNotifications;
+window.renderNotifications = function () {
+  _labNotifBase();
+  const itens = document.querySelectorAll('#notif-list .notif-item');
+  (state.notifications || []).forEach((n, i) => {
+    if (!n.labMsg || !itens[i]) return;
+    const d = itens[i].querySelector('.dot');
+    if (d) d.classList.add('lab-dot-msg');
+  });
+  const sino = document.getElementById('notif-dot');
+  if (sino) sino.classList.toggle('lab-dot-msg', (state.notifications || []).some((n) => n.labMsg && n.unread));
+};
+
+/* ---------- histórico da tarefa = A TIMELINE DO HUB ---------- */
+const LAB_HUB_STATUS = {
+  andamento:   { rotulo: 'Em andamento',        cor: '#2463eb',               fundo: 'var(--brand-blue-soft)', borda: '#2463eb' },
+  processamento: { rotulo: 'Em processamento',  cor: '#2463eb',               fundo: 'var(--brand-blue-soft)', borda: '#2463eb' },
+  aguardando:  { rotulo: 'Aguardando retorno',  cor: 'var(--warning)',        fundo: 'var(--warning-soft)',    borda: '#f59e0b' },
+  concluida:   { rotulo: 'Concluída',           cor: '#17a349',               fundo: 'var(--success-soft)',    borda: '#17a349' },
+  cancelada:   { rotulo: 'Cancelada',           cor: 'var(--danger)',         fundo: '#fef2f2',                borda: 'var(--danger)' },
+};
+const LAB_MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+// "14 de mai às 10:35" — o formato do Hub. Deriva de createdDaysAgo/MOCK_TODAY, a mesma
+// fonte de data que o resto da tela usa (_dmyFromDaysAgo do núcleo).
+function labDataHub(diasAtras, hora) {
+  const dmy = _dmyFromDaysAgo(diasAtras || 0).split('/');
+  const mes = LAB_MESES_ABREV[Number(dmy[1]) - 1] || dmy[1];
+  return `${Number(dmy[0])} de ${mes}${hora ? ` às ${hora}` : ''}`;
+}
+function _labHora(txt) { const m = String(txt || '').match(/\d{1,2}:\d{2}/); return m ? m[0] : ''; }
+// Quantos dias atrás um timestamp de mock aconteceu, na régua do MOCK_TODAY. Sem pista de dia,
+// vale o dia em que a solicitação entrou — é a mesma leitura de labQuandoExato.
+function labDiasDo(t, txt) {
+  const bruto = String(txt || '').trim();
+  const padrao = t.createdDaysAgo || 0;
+  if (!bruto) return padrao;
+  const abs = bruto.match(/(\d{1,2})\/(\d{1,2})\/(\d{2})/);
+  if (abs) {
+    const hoje = new Date(MOCK_TODAY.ano, MOCK_TODAY.mes - 1, MOCK_TODAY.dia);
+    const quando = new Date(2000 + Number(abs[3]), Number(abs[2]) - 1, Number(abs[1]));
+    return Math.max(0, Math.round((hoje - quando) / 86400000));
+  }
+  if (/^agora|hoje/i.test(bruto)) return 0;
+  if (/ontem/i.test(bruto)) return 1;
+  const m = /h[áa]\s*(\d+)\s*d/i.exec(bruto);
+  return m ? Number(m[1]) : padrao;
+}
+
+function labAgora() {
+  const d = new Date();
+  return `${_dmyFromDaysAgo(0)} ${_pad2(d.getHours())}:${_pad2(d.getMinutes())}`;
+}
+// Dentro do passo a régua é outra e já existia: "14/05 · 10:41" (labHoraPasso e os eventos
+// declarados no mock). Comentário escrito agora entra no formato dos vizinhos, não no da conversa.
+function labAgoraPasso() {
+  const d = new Date();
+  return `${_dmyFromDaysAgo(0).slice(0, 5)} · ${_pad2(d.getHours())}:${_pad2(d.getMinutes())}`;
+}
+function labQuandoExato(t, txt) {
+  const bruto = String(txt || '').trim();
+  if (!bruto) return '';
+  if (/\d{1,2}\/\d{1,2}\/\d{2}/.test(bruto)) return bruto; // mock já exato
+  if (/^agora/i.test(bruto)) return labAgora();
+  const hora = _labHora(bruto) || t.receivedAt || '';
+  let dias = t.createdDaysAgo || 0; // sem pista de dia, vale o dia em que a solicitação entrou
+  if (/hoje/i.test(bruto)) dias = 0;
+  else if (/ontem/i.test(bruto)) dias = 1;
+  else { const m = /h[áa]\s*(\d+)\s*d/i.exec(bruto); if (m) dias = Number(m[1]); }
+  return `${_dmyFromDaysAgo(dias)}${hora ? ` ${hora}` : ''}`;
+}
+
+const LAB_ATRIB_POR = {
+  'T-2107': 'o2', // a tarefa da Beatriz veio de uma atribuição do Lucas, não da fila
+};
+function labSemearAtribuicao(t) {
+  if (t.labInternos) return;
+  t.labInternos = [];
+  const dono = t.operatorId;
+  if (!dono || dono === 'ap') return;
+  const nome = (acOp(dono) || {}).nome || OPERATOR_NAME;
+  const por = LAB_ATRIB_POR[t.id];
+  const quemPor = por && por !== dono ? (acOp(por) || {}).nome : '';
+  t.labInternos.push({
+    dia: t.createdDaysAgo || 0,
+    hora: t.receivedAt || '',
+    texto: quemPor ? `${quemPor} atribuiu a tarefa a ${nome}` : `${nome} pegou a tarefa da fila`,
+  });
+}
+function labAtribuicoes(t) { return t.labInternos || []; }
+// Registra uma mudança de mão feita agora, na hora do relógio de verdade.
+function labRegistraAtribuicao(texto) {
+  const t = _lab.t;
+  if (!t) return;
+  const d = new Date();
+  (t.labInternos = t.labInternos || []).push({ dia: 0, hora: `${_pad2(d.getHours())}:${_pad2(d.getMinutes())}`, texto });
+}
+
+/* Os acontecimentos saem dos campos que a tarefa já tem — nada de dado novo inventado:
+   receivedAt/createdDaysAgo · operatorId · stationedAt/stationedReason · clientResponded ·
+   status/timelineStep · finishedAt · cancelledAt/cancelReason · messages.
+   Onde o mock não guarda hora própria (entrar em análise, entrar em processamento), o
+   evento herda a hora do vizinho conhecido — é mock, e as horas do resto da tela também
+   são derivadas assim. */
+/* Robô e HITL não têm cliente do outro lado: o painel deixa de ser a vista do Hub e passa a ser
+   o registro interno da tarefa. Só a vida dela — nascimento, trocas de mão e desfecho; o
+   travamento do robô já aparece no passo que falhou, no roteiro, atrás do painel. */
+function labHistoricoAP(t) {
+  const ev = [];
+  const dia = t.createdDaysAgo || 0;
+  const passos = labRoteiro(t) || [];
+  const horaDoPasso = (p) => {
+    if (!p) return '';
+    const evs = labEventos(t, p);
+    return _labHora(p.quando) || _labHora((evs[evs.length - 1] || {}).quando);
+  };
+
+  if (labTipo(t) === 'robo') {
+    // O relógio do painel é o do roteiro, não o do cabeçalho: os dois divergem nos mocks.
+    ev.push({ dia, hora: _labHora(_apTime(0)) || t.receivedAt || '', icone: 'sparkles', tom: 'escuro', titulo: 'Execução iniciada pelo Autopilot' });
+  } else {
+    ev.push({ dia, hora: t.receivedAt || '', icone: 'sparkles', tom: 'escuro', titulo: 'Tarefa gerada pelo Autopilot', link: t.apExecucao || null });
+    labAtribuicoes(t).forEach((a) => ev.push({ dia: a.dia, hora: a.hora, interno: true, texto: a.texto }));
+    if (t.status === 'completed') {
+      const atu = labUltimaAtuacao(t);
+      ev.push({ dia, hora: horaDoPasso(passos[0]), icone: 'activity', tom: 'azul', titulo: 'Resolvida e devolvida ao Autopilot', nota: atu && atu.nome ? `Por ${atu.nome.split(' · ')[0]}` : '' });
+    }
+  }
+  if (t.status === 'completed') ev.push({ dia: t.finishedDaysAgo || 0, hora: _labHora(t.finishedAt), icone: 'check', tom: 'verde', titulo: 'Concluída' });
+
+  let ultima = ev[0] ? ev[0].hora : '';
+  ev.forEach((e) => { if (!e.hora) e.hora = ultima; else ultima = e.hora; });
+  return ev;
+}
+
+function labHistoricoEventos(t) {
+  if (labTipo(t) !== 'cliente') return labHistoricoAP(t);
+  const ev = [];
+  const diaIn = t.createdDaysAgo || 0;
+  const horaIn = t.receivedAt || '';
+  ev.push({ dia: diaIn, hora: horaIn, icone: 'sparkles', tom: 'escuro', titulo: 'Solicitação criada' });
+
+  // "Em andamento" NASCE DA ATRIBUIÇÃO: enquanto a solicitação está na fila sem dono, o cliente
+  // só vê que ela foi criada. É por isso que não existe um evento de "Aberto" — sair da fila é o
+  // primeiro status que ele recebe.
+  const atrib = labAtribuicoes(t);
+  // Devolver à fila não apaga o "Em andamento" que o cliente já leu — por isso o registro de
+  // atribuição também conta, e a hora do status é a da atribuição, não a da criação.
+  const atribuida = t.status !== 'queue' || atrib.length > 0;
+  if (atribuida) ev.push({ dia: atrib[0] ? atrib[0].dia : diaIn, hora: atrib[0] ? atrib[0].hora : horaIn, icone: 'activity', tom: 'azul', status: 'andamento' });
+
+  // Quem pegou (ou recebeu) a tarefa, junto do status que essa ação gerou.
+  atrib.forEach((a) => ev.push({ dia: a.dia, hora: a.hora, interno: true, texto: a.texto }));
+
+  // Mensagens entram na ordem em que foram trocadas, entre os status.
+  const msgs = labMsgs(t);
+  msgs.forEach((m) => {
+    const doCliente = m.from === 'client';
+    ev.push({
+      dia: labDiasDo(t, m.timestamp),
+      hora: _labHora(m.timestamp) || horaIn,
+      icone: 'message-square', tom: doCliente ? 'claro' : 'escuro',
+      quem: doCliente ? (t.senderName || 'Cliente') : 'BHub',
+      escopo: doCliente ? 'Cliente' : 'Escritório',
+      texto: m.text || '',
+    });
+  });
+
+  if (t.status === 'stationed') {
+    ev.push({ dia: diaIn, hora: _labHora(t.stationedAt) || horaIn, icone: 'activity', tom: 'ambar', status: 'aguardando', nota: t.stationedReason || '' });
+    if (t.clientResponded) ev.push({ dia: 0, hora: _labHora(t.respondedAt) || '', icone: 'activity', tom: 'azul', status: 'andamento' });
+  }
+  if (t.status === 'processing' || t.timelineStep === 2 || t.status === 'completed') {
+    ev.push({ dia: t.status === 'completed' ? (t.finishedDaysAgo || 0) : 0, hora: '', icone: 'activity', tom: 'azul', status: 'processamento' });
+  }
+  if (t.status === 'completed') ev.push({ dia: t.finishedDaysAgo || 0, hora: _labHora(t.finishedAt), icone: 'check', tom: 'verde', status: 'concluida' });
+  // Cancelada usa o X DENTRO DE CÍRCULO, não o X solto: é o ícone do Hub. O caso de tarefa
+  // cancelada está fora do catálogo do lab, mas o evento já sai certo quando ele voltar.
+  if (t.status === 'cancelled') ev.push({ dia: t.cancelledDaysAgo || 0, hora: _labHora(t.cancelledAt), icone: 'circle-x', tom: 'vermelho', status: 'cancelada', nota: t.cancelReason || '' });
+
+  // Ordem = cronológica de verdade, não a ordem em que eu empilhei: um mock com mensagem
+  // depois da espera sairia fora de ordem. Evento sem hora herda a do anterior.
+  let ultima = horaIn;
+  ev.forEach((e) => { if (!e.hora) e.hora = ultima; else ultima = e.hora; });
+  return ev
+    .map((e, k) => ({ e, k }))
+    .sort((a, z) => ((z.e.dia - a.e.dia) || a.e.hora.localeCompare(z.e.hora) || (a.k - z.k)))
+    .map((x) => x.e);
+}
+
+function labHistoricoAbrir() {
+  const t = _lab.t;
+  const itens = labHistoricoEventos(t).map((e) => {
+    if (e.interno) {
+      return `<div class="lab-tl-item">
+        <div class="lab-tl-dot mini"></div>
+        <div class="lab-tl-corpo">
+          <div class="lab-tl-when">${esc(labDataHub(e.dia, e.hora))}</div>
+          <div class="lab-tl-interno"><span class="lab-tl-tag">Interno</span>${esc(e.texto)}</div>
+        </div>
+      </div>`;
+    }
+    const st = e.status ? LAB_HUB_STATUS[e.status] : null;
+    const chip = st ? `<span class="lab-tl-chip" style="color:${st.cor};background:${st.fundo};border-color:${st.borda};">${esc(st.rotulo)}</span>` : '';
+    const titulo = e.quem
+      ? `<div class="lab-tl-quem">${esc(e.quem)}<span class="lab-tl-escopo">·&nbsp;${esc(e.escopo || '')}</span></div>`
+      : `<div class="lab-tl-titulo">${e.titulo ? esc(e.titulo) : 'Status alterado para'} ${chip}</div>`;
+    const corpo = e.texto ? `<div class="lab-tl-msg">${esc(e.texto)}</div>` : '';
+    const nota = e.nota ? `<div class="lab-tl-nota">${esc(e.nota)}</div>` : '';
+    const link = e.link ? `<button class="ap-crosslink" style="margin-top:9px;font-size:11px;padding:5px 10px;" onclick="acNavModal('${e.link.to}')"><i data-lucide="external-link" style="width:14px;height:14px;"></i>${esc(e.link.label)}</button>` : '';
+    return `<div class="lab-tl-item">
+      <div class="lab-tl-dot ${e.tom}"><i data-lucide="${e.icone}"></i></div>
+      <div class="lab-tl-corpo">
+        <div class="lab-tl-when">${esc(labDataHub(e.dia, e.hora))}</div>
+        ${titulo}${nota}${corpo}${link}
+      </div>
+    </div>`;
+  }).join('');
+  labDrawerAbrir({
+    titulo: 'Histórico',
+    sub: labTipo(t) === 'cliente'
+      ? 'A linha do tempo que o cliente vê no Hub · as marcas menores são internas'
+      : 'Tudo o que aconteceu com esta tarefa',
+    corpo: `<div class="lab-tl">${itens}</div>`,
+  });
+  _lab.drawerQual = 'historico';
+}
+
+// Histórico à ESQUERDA da Conversa: a ordem das coisas antes de falar sobre elas.
+function labHistoricoBtn(t) {
+  return `<button class="lab-conversa-btn" onclick="labHistoricoAbrir()"><i data-lucide="history" style="width:15px;height:15px;"></i>Histórico</button>`;
+}
+function labArqDe(f) {
+  const kb = f.size / 1024;
+  return { name: f.name, size: kb > 1024 ? (kb / 1024).toFixed(1) + ' MB' : Math.max(1, Math.round(kb)) + ' KB' };
+}
+function labRespAnexoCampo() {
+  return `
+    <input type="file" id="lab-resp-file" style="display:none;" multiple onchange="labRespAnexar(event)" />
+    <div style="margin-top:10px;"><button class="lab-anexar-btn" onclick="document.getElementById('lab-resp-file').click()"><i data-lucide="paperclip" style="width:14px;height:14px;"></i>Anexar arquivo</button></div>
+    <div id="lab-resp-anexos" style="display:flex;flex-wrap:wrap;gap:8px;">${labRespAnexosHTML()}</div>`;
+}
+function labRespAnexosHTML() {
+  const arqs = _lab.respAnexos || [];
+  return arqs.map((f, i) => renderFileItem(f, { removable: true, removeFn: `labRespAnexoRemover(${i})` })).join('');
+}
+// Repinta SÓ a lista: re-renderizar o rodapé jogaria fora o texto já digitado.
+function labRespAnexosPinta() {
+  const el = document.getElementById('lab-resp-anexos');
+  if (!el) return;
+  el.style.marginTop = (_lab.respAnexos || []).length ? '10px' : '0';
+  el.innerHTML = labRespAnexosHTML();
+  refreshIcons();
+}
+function labRespAnexar(e) {
+  _lab.respAnexos = (_lab.respAnexos || []).concat(Array.from(e.target.files).map(labArqDe));
+  e.target.value = '';
+  labRespAnexosPinta();
+}
+function labRespAnexoRemover(i) {
+  const lista = _lab.respAnexos || [];
+  const arq = lista[i];
+  if (!arq) return;
+  confirmRemoveAttachment(arq.name, () => { lista.splice(i, 1); labRespAnexosPinta(); });
+}
+
+function labRespBtn() {
+  const ta = document.getElementById('lab-resp-input'), b = document.getElementById('lab-resp-btn');
+  if (!ta || !b) return;
+  const ok = !!ta.value.trim();
+  b.disabled = !ok; b.style.opacity = ok ? '' : '0.5'; b.style.cursor = ok ? '' : 'not-allowed';
+}
+function labResponder() {
+  const ta = document.getElementById('lab-resp-input');
+  const txt = ta ? ta.value.trim() : '';
+  if (!txt) return;
+  const t = _lab.t;
+  const arqs = (_lab.respAnexos || []).slice();
+  // labMsgs, não t.messages: em espera a conversa pode vir do fallback do núcleo, e concatenar
+  // sobre t.messages apagaria da tela o que a pessoa acabou de ler.
+  t.messages = labMsgs(t).concat([{ from: 'operator', text: txt, timestamp: labAgora(), attachments: arqs }]);
+  _lab.respAnexos = [];
+
+  // Só coloca em espera se a opção estiver marcada — e só se ainda não estiver.
+  const vaiEsperar = _lab.espera && !labEmEspera(t) && labPosse(t) === 'minha';
+  if (vaiEsperar) {
+    // A fase é PRESERVADA: guarda onde a tarefa está antes de trocar o status, senão a régua
+    // andaria pra trás (ver labFases). Motivo da espera = a mensagem, cortada em 80 — a
+    // mesma regra do enviarPendenciaCliente do núcleo.
+    t.timelineStep = labNoProcessamento(t) ? 2 : 1;
+    t.status = 'stationed';
+    t.stationedAt = labAgora();
+    t.stationedReason = txt.length > 80 ? txt.substring(0, 80) + '…' : txt;
+    t.clientResponded = false;
+  }
+  labConversaFechar();
+  labRender();
+  const comArqs = arqs.length ? ` com ${arqs.length} arquivo${arqs.length > 1 ? 's' : ''}` : '';
+  flash(vaiEsperar
+    ? `Mensagem${comArqs} enviada — a tarefa ficou em espera aguardando o cliente.`
+    : `Mensagem${comArqs} enviada ao cliente.`, 'success');
+}
+
+/* ---------- ações (dependem de posse) ---------- */
+function labAtribuirAMim() {
+  const t = _lab.t;
+  showConfirmModal({
+    title: 'Atribuir esta tarefa a você?',
+    message: `A tarefa <strong>${esc(t.type || '')}</strong> (${esc(t.clientName || '')}) passa a ser sua e sai da fila${t.operatorId ? ' de quem está com ela agora' : ''}. Os controles de execução ficam liberados.`,
+    confirmLabel: 'Atribuir a mim', cancelLabel: 'Cancelar',
+    onConfirm: () => {
+      t.operatorId = LAB_EU;
+      if (t.status === 'queue') t.status = 'active';
+      labRegistraAtribuicao(`${OPERATOR_NAME} pegou a tarefa da fila`);
+      labRender();
+      flash('Tarefa atribuída a você.', 'success');
+    },
+  });
+}
+function labDevolverFila() {
+  const t = _lab.t;
+  const minha = t.operatorId === LAB_EU;
+  showConfirmModal({
+    title: 'Devolver à fila?',
+    message: minha
+      ? 'A tarefa volta para a fila geral, sem dono, e outro operador pode pegá-la. O que você já marcou como feito continua registrado.'
+      : 'A tarefa sai de quem está com ela agora e volta para a fila geral, sem dono. O que já foi marcado como feito continua registrado.',
+    confirmLabel: 'Devolver à fila', cancelLabel: 'Cancelar', danger: true,
+    onConfirm: () => {
+      // Quem devolve é sempre quem está navegando, mesmo quando a tarefa era de um colega — e é
+      // justamente nesse caso que o registro importa: some da mão dela sem ela ter feito nada.
+      const dela = !minha ? ((acOp(t.operatorId) || {}).nome || '') : '';
+      t.operatorId = null;
+      t.status = 'queue';
+      labRegistraAtribuicao(dela
+        ? `${OPERATOR_NAME} devolveu à fila a tarefa de ${dela}`
+        : `${OPERATOR_NAME} devolveu a tarefa à fila`);
+      labRender();
+      flash('Tarefa devolvida à fila.', 'success');
+    },
+  });
+}
+function labVoltarValidacao(opts) {
+  const t = _lab.t;
+  const editar = !!(opts && opts.editar);
+  showConfirmModal({
+    title: 'Voltar aos dados da solicitação?',
+    message: 'A tarefa volta para a etapa de <strong>Dados da solicitação</strong>, o status muda para <strong>Em andamento</strong> (o cliente também vê) e os passos de <strong>Processamento</strong> já marcados serão desmarcados — você refaz ao reavançar.',
+    confirmLabel: editar ? 'Voltar e editar' : 'Voltar aos dados', cancelLabel: 'Cancelar',
+    // Zera a visita: a etapa dos dados virou a fase CORRENTE, então não há mais "estou olhando
+    // o passado" — se ficasse, a tela diria que a tarefa está em outro lugar.
+    onConfirm: () => {
+      t.status = 'active'; t.timelineStep = 1; t.labDone = 0; _lab.vendo = null;
+      labRender();
+      if (editar) enterEditMode();
+      flash('Tarefa voltou aos dados da solicitação — agora os campos podem ser editados.', 'success');
+    },
+  });
+}
+// Contraparte de labVoltarValidacao: avança a etapa. Mesmo efeito do aceitarTarefa()
+// do núcleo (timelineStep = 2 → o cliente vê "Em processamento"). Não pede confirmação
+// porque é o caminho esperado — quem REGRIDE é que confirma.
+function labAceitarTarefa() {
+  const t = _lab.t;
+  t.status = 'processing';
+  t.timelineStep = 2;
+  _lab.vendo = null; // a fase mudou: qualquer visita em curso perdeu sentido
+  labRender();
+  flash('Tarefa em processamento.', 'success');
+}
+// labDone conta os passos DO PROCESSO — não o passo de validação, que já veio feito.
+// Por isso a conta é sobre labPassosDoProcesso, não sobre o roteiro renderizado.
+function labMarcarFeito(i) {
+  const t = _lab.t;
+  const p = (labRoteiro(t) || [])[i];
+  if (labMsgFinalPendente(t, p)) { labMsgFinalCobrar(); return; }
+  const total = labPassosDP(t).length;
+  const proximo = Math.min((t.labDone || 0) + 1, total);
+  if (proximo >= total) { labFinalizarAbrir(); return; }
+  t.labDone = proximo;
+  labRender();
+}
+
+function labFinalizarAbrir() {
+  const t = _lab.t;
+  const alvo = document.getElementById('modal-confirm-finish');
+  if (!alvo) { labFinalizarConfirmar(); return; } // sem o modal do núcleo, não trava o fluxo
+  const det = document.getElementById('confirm-finish-detail');
+  if (det) {
+    const n = labMsgFinalArqs(t).length;
+    const arquivos = n ? `${n} arquivo${n > 1 ? 's' : ''}` : 'nenhum arquivo';
+    det.innerHTML = `A mensagem que você escreveu e <strong>${arquivos}</strong> vão para <strong>${esc(t.clientName)}</strong> no HUB, na solicitação de ${esc(t.type)}.`;
+  }
+  alvo.classList.remove('hidden');
+  refreshIcons();
+}
+function labFinalizarFechar() {
+  const alvo = document.getElementById('modal-confirm-finish');
+  if (alvo) alvo.classList.add('hidden');
+}
+function labFinalizarConfirmar() {
+  const t = _lab.t;
+  /* REDE DA MENSAGEM OBRIGATÓRIA: o caminho normal já barra em labMarcarFeito, mas o modal do núcleo
+     pode ser aberto por outra porta — e confirmar aqui é o que notifica o cliente. */
+  const roteiro = labRoteiro(t) || [];
+  const passoFinal = roteiro.filter((p) => (p.blocos || []).some((b) => b.tipo === 'mensagem-final')).pop();
+  if (labMsgFinalPendente(t, passoFinal)) { labFinalizarFechar(); labMsgFinalCobrar(); return; }
+  t.labDone = labPassosDP(t).length;
+  t.status = 'completed';
+  t.finishedDaysAgo = 0;
+  t.finishedAt = labAgora();
+  labFinalizarFechar();
+  labRender();
+  flash('Solicitação concluída — o cliente foi notificado.', 'success');
+}
+// Os botões do modal do núcleo chamam estas duas funções; no lab elas terminam em labRender em vez
+// de trocar de tela (a `screen-success` não existe aqui — o fim do roteiro faz esse papel).
+window.confirmarFinalizacao = labFinalizarConfirmar;
+window.closeConfirmFinish = labFinalizarFechar;
+
+function labAcaoPasso(i) {
+  const t = _lab.t;
+  if (!labPodeAgir(t)) return;
+  const p = (labRoteiro(t) || [])[i];
+  if (!p || !p.acao) return;
+  const jaFeito = labEstadoVisual(t, p) === 'done';
+  if (jaFeito) { flash(`${p.acao.label} — repetido.`, 'info'); return; }
+  if (p.autoConclui) { flash(`${p.acao.label} — concluído.`, 'success'); labMarcarFeito(i); return; }
+  flash(`${p.acao.label} — ação registrada. Marque como feito quando concluído.`, 'info');
+  labRender();
+}
+
+/* Passo FEITO que tem corpo recolhe, como no projeto: o cabeçalho vira clicável, ganha um chevron
+   e o conteúdo só aparece quando se pede. Sem isso, uma tarefa concluída abria com os quatro
+   corpos empilhados abertos e a régua do que foi feito virava um paredão. */
+function labPassoToggle(i) {
+  _lab.expandido[i] = !_lab.expandido[i];
+  labRender();
+}
+
+// Cross-link execução ⇄ pendência: no lab, navega entre TELAS (não entre modais). O modo de
+// leitura acompanha: quem está espiando continua espiando do outro lado.
+function acNavModal(id) { location.href = 'tarefa.html?id=' + encodeURIComponent(id); }
+
+/* ---------- montagem ----------
+   A tela ABRE NA ETAPA EM QUE A TAREFA ESTÁ. O chassi (cabeçalho + fases) é sempre o
+   mesmo; o miolo é o da fase corrente: Dados da solicitação mostra os dados a conferir,
+   Processamento mostra o roteiro de passos. O Autopilot não tem etapa de conferência
+   do operador — cai direto no roteiro, como sempre foi. */
+function labMiolo(t) {
+  if (t.status === 'cancelled') return labExecucao(t); // cancelada: sem passos, só a conversa
+  const tipo = labTipo(t);
+  if (tipo === 'robo') return labExecucao(t);          // tarefa do robô: o roteiro, como sempre
+  if (tipo === 'hitl') return labMioloHITL(t);         // HITL: as telas de resolução do Autopilot
+  return labEmValidacao(t) ? labValidacao(t) : labExecucao(t);
+}
+
+function labRender() {
+  const host = document.getElementById('screens-container');
+  const t = _lab.t;
+  // A aba aberta é estado da TELA, não da tarefa: a tela se redesenha inteira a cada ação, e sem
+  // guardar isso qualquer clique jogaria a pessoa de volta pra primeira aba.
+  const abaAtual = (typeof _getActiveFormTabId === 'function') ? _getActiveFormTabId() : null;
+  if (abaAtual) _lab.aba = abaAtual;
+  host.innerHTML = `<div class="container-wide" style="min-width:840px;">
+    ${labHeader(t)}
+    ${t.status === 'cancelled' ? '' : `<div class="section-card" style="padding:20px 28px;"><div class="timeline-horizontal">${labStepperHTML(t)}</div></div>`}
+    ${labMiolo(t)}
+  </div>`;
+  labPintaForm(t);
+  refreshIcons();
+  // O painel de eventos vive fora do #screens-container, então o redesenho da tela não passa por
+  // ele. Comentar muda os dois ao mesmo tempo: a contagem no botão e a lista dentro do painel.
+  if (_lab.drawerQual === 'eventos') labEventosRedesenhar();
+}
+
+function labMount() {
+  const host = document.getElementById('screens-container');
+  if (!host) { setTimeout(labMount, 40); return; }
+  const t = AC_TAREFAS.find((x) => x.id === labId());
+  if (!t) {
+    host.innerHTML = `<div class="container-wide"><div class="section-card">
+      <div class="section-title"><i data-lucide="search-x"></i>Tarefa não encontrada</div>
+      <p class="lab-vazio">Nenhuma tarefa com o id <strong>${esc(labId() || '—')}</strong>. Abra uma tarefa a partir do painel.</p>
+      <div style="margin-top:16px;"><a class="btn btn-primary" href="${labVoltarHref()}" style="text-decoration:none;"><i data-lucide="arrow-left" class="w-4 h-4"></i>Ir para o painel</a></div>
+    </div></div>`;
+    refreshIcons(); return;
+  }
+  _lab.t = t;
+  /* O núcleo procura a tarefa corrente por `state.currentTaskId` (getTaskById). As tarefas do lab
+     vivem em AC_TAREFAS, fora das listas do state — apontar `state.active` pra ela é o que faz
+     `renderForm`, `enterEditMode`, `saveEdits` e `showEditLog` funcionarem aqui sem cópia. */
+  state.active = t;
+  state.currentTaskId = t.id;
+  // O passo de mensagem e entrega guarda os arquivos aqui (chave do núcleo, ver labMsgFinalArqs).
+  if (!state._gdocsFiles) state._gdocsFiles = {};
+  if (!state._gdocsFiles[t.id]) state._gdocsFiles[t.id] = [];
+  labSemearMsgFinal(t);
+  labSemearLog(t);
+  labSemearAtribuicao(t);
+  labRoteiro(t).forEach((p, i) => { if (p.nasceAberto) _lab.expandido[i] = true; });
+  labRender();
+  // Selo do canto: diz em que versão você está e volta pro índice das versões.
+  document.body.insertAdjacentHTML('beforeend', `<a class="lab-flag" href="../index.html" title="Ver todas as versões">laboratório · despesa de aluguel · ${LAB_VERSAO_LABEL}</a>`);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && _lab.drawer) labDrawerFechar();
+});
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', labMount); else labMount();
+</script>
+</body>
+</html>

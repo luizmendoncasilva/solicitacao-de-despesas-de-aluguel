@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>Acompanhamento · laboratório da despesa de aluguel</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html { scrollbar-gutter: stable; }
+
+  /* Topbar do painel */
+  .ac-head { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .ac-head .ac-title { font-size: 24px; font-weight: 700; color: var(--text-primary); line-height: 1.1; }
+  .ac-head .ac-sub { font-size: 12.5px; color: var(--text-tertiary); margin-top: 3px; }
+  .ac-selo { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--text-secondary); border: 1px solid var(--border); background: var(--surface-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .ac-back { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--brand-blue); text-decoration: none; }
+  .ac-back:hover { text-decoration: underline; }
+
+  /* Segmented control (período) */
+  .ac-seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 10px; }
+  .ac-seg button { padding: 6px 12px; font-size: 12px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border: none; background: transparent; border-radius: 7px; white-space: nowrap; }
+  .ac-seg button.active { background: #fff; color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+  .ac-seg button:hover:not(.active) { color: var(--text-primary); }
+
+  /* Barra de filtros repaginada (bloco próprio: busca + dropdowns + chips) */
+  .ac-filterbar { margin-bottom: 18px; display: flex; flex-direction: column; gap: 10px; }
+  .ac-search { position: relative; }
+  .ac-search > i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); pointer-events: none; }
+  .ac-search input { width: 100%; box-sizing: border-box; height: 40px; padding: 0 12px 0 38px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--surface-subtle); outline: none; transition: all .12s; }
+  .ac-search input:focus { border-color: var(--brand-blue); background: #fff; box-shadow: 0 0 0 3px var(--brand-blue-soft); }
+  .ac-filters-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .ac-filters-row .flt-label { font-size: 11.5px; color: var(--text-tertiary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
+  .ac-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .ac-chips-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .ac-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; background: var(--brand-blue-soft); color: var(--brand-blue); border: 1px solid var(--brand-blue); cursor: pointer; font-weight: 500; }
+  .ac-chip b { font-weight: 700; }
+  .ac-chip:hover { background: var(--brand-blue); color: #fff; }
+  .ac-chips-clear { background: none; border: none; color: var(--text-tertiary); font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .ac-chips-clear:hover { color: var(--brand-pink); }
+
+  /* Chip-toggle "Via Autopilot": liga/desliga (não abre menu). Recorta o que o robô
+     gerou pra uma pessoa resolver (HITL loop) — mesmo critério da tag "via Autopilot". */
+  .flt-toggle { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border: 1px solid #ebebeb; border-radius: 10px; background: #fff; font-size: 14px; color: var(--text-primary); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.05); white-space: nowrap; }
+  .flt-toggle:hover { background: var(--surface-subtle); }
+  .flt-toggle .flt-toggle-ic { color: var(--brand-blue); }
+  .flt-toggle.on { background: var(--brand-blue-soft); border-color: var(--brand-blue); color: var(--brand-blue); font-weight: 600; }
+  .flt-toggle.on .flt-toggle-ic { color: var(--brand-blue); }
+
+  /* Seletor de período: módulo compartilhado (.pp-*) vive no cockpit-core.js. */
+
+  /* Faixa de números */
+  .ac-kpis { display: flex; align-items: stretch; gap: 0; background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 20px; }
+  /* Card em coluna: o `margin-top:auto` do valor ancora o número na base, então todos
+     alinham entre si mesmo com rótulos de alturas diferentes. */
+  .ac-kpi { flex: 1; padding: 16px 18px; border-right: 1px solid var(--border); min-width: 0; display: flex; flex-direction: column; }
+  .ac-kpi:last-child { border-right: none; }
+  .ac-kpi .k-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .ac-kpi .k-sub { font-size: 10.5px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+  .ac-kpi .k-value { font-size: 27px; font-weight: 700; color: var(--text-primary); line-height: 1.05; margin-top: auto; padding-top: 10px; }
+  .ac-kpi .k-value.warning { color: var(--warning); }
+  .ac-kpi .k-value.danger { color: var(--danger); }
+  .ac-kpi .k-value.success { color: var(--success); }
+  /* Corta o encerrado do que ainda está em aberto: os cards à direita do divisor são
+     recortes do "Em aberto", nunca contam tarefa concluída. */
+  .ac-kpi.group-edge { border-right: 3px double #a1a1aa; }
+  .ac-kpi-cap { padding: 16px 14px; display: flex; align-items: center; }
+  .ac-kpi-cap span { font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; writing-mode: vertical-rl; transform: rotate(180deg); }
+  .ac-kpi .k-value.brand { color: var(--brand-pink); }
+
+
+  /* Sub-tabela de tarefas dentro do grupo */
+  .ac-sub-head, .ac-trow { display: grid; grid-template-columns: 30px minmax(150px, 1.8fr) minmax(120px, 1.1fr) minmax(120px, 0.9fr) minmax(140px, 1.05fr) 40px; align-items: center; gap: 12px; padding: 9px 16px; }
+  .ac-sub-head { background: var(--surface-muted); border-bottom: 1px solid var(--border); }
+  .ac-sub-head .h-cell { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+  .ac-trow { position: relative; background: #fff; }
+  .ac-trow + .ac-trow { border-top: 1px solid var(--border); }
+  .ac-trow:hover { background: var(--surface-subtle); }
+  .ac-trow.execucao { box-shadow: inset 3px 0 0 var(--brand-pink); }
+  .ac-trow.stationed-row { box-shadow: inset 3px 0 0 var(--warning); }
+  .ac-trow.completed-row { box-shadow: inset 3px 0 0 var(--success); }
+  .ac-trow .t-solic { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .ac-trow .t-name { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.25; word-break: break-word; }
+  .ac-trow .t-cnpj { font-size: 11px; color: var(--text-tertiary); font-family: 'JetBrains Mono', monospace; }
+  .ac-trow .t-tipo { font-size: 12.5px; color: var(--text-primary); font-weight: 500; }
+  .ac-trow .t-op { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; display: inline-flex; align-items: center; gap: 5px; }
+  .ac-trow .t-op .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .ac-eye { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .12s; }
+  .ac-eye:hover { border-color: var(--brand-blue); color: var(--brand-blue); }
+
+  /* Comparação original × feito */
+  .cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .cmp-col { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .cmp-col .cmp-head { padding: 10px 14px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+  .cmp-col.orig .cmp-head { background: var(--surface-muted); color: var(--text-secondary); }
+  .cmp-col.done .cmp-head { background: var(--success-soft); color: var(--success); }
+  .cmp-field { padding: 9px 14px; font-size: 13px; }
+  .cmp-field + .cmp-field { border-top: 1px solid var(--border); }
+  .cmp-field .f-label { font-size: 10.5px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }
+  .cmp-field .f-val { color: var(--text-primary); margin-top: 1px; }
+  .cmp-field.changed { background: #fffbeb; }
+  .cmp-field.changed .f-val { color: #92400e; font-weight: 600; }
+  .cmp-changed-tag { display: inline-block; margin-left: 6px; font-size: 9.5px; font-weight: 700; color: #b45309; background: rgba(245,158,11,0.15); border: 1px solid #f59e0b; border-radius: 4px; padding: 0 4px; vertical-align: middle; }
+
+  /* Tag "via Autopilot" na linha (marca a tarefa criada/executada pelo robô) */
+  /* Tag "via Autopilot" — sóbria, igual à Andressa (cinza, sem competir com os estados) */
+  .tag-autopilot { display: inline-flex; align-items: center; font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; background: #f3f4f6; border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+
+  /* ── Tabela dedicada (colunas próprias do acompanhamento + Autopilot) ──────
+     Não usa o grid do core (.lo-row) — aqui a gente tem mais colunas: Cliente,
+     Processo, Área, Competência, Atribuído a, Estado, Prazo. Rola na horizontal
+     se faltar largura. */
+  .apt-wrap { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; overflow-x: auto; background: #fff; }
+  .apt-head, .apt-row { display: grid; grid-template-columns: 30px minmax(172px,1.5fr) minmax(156px,1.35fr) 74px 92px minmax(118px,0.9fr) minmax(104px,0.62fr) minmax(126px,0.9fr) 40px; align-items: center; gap: 12px; padding: 10px 16px; min-width: 1080px; }
+  .apt-head { background: var(--surface-muted); border-bottom: 1px solid var(--border); }
+  .apt-head .h-cell { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+  .apt-row { border-top: 1px solid var(--border); cursor: pointer; }
+  .apt-row:hover { background: var(--surface-subtle); }
+  .apt-row.r-hitl { box-shadow: inset 3px 0 0 var(--warning); }
+  .apt-row.r-exec { box-shadow: inset 3px 0 0 var(--brand-pink); }
+  .apt-row.r-proc { box-shadow: inset 3px 0 0 var(--brand-blue); }
+  .apt-cli-name { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.25; word-break: break-word; }
+  .apt-cli-sub { font-size: 11px; color: var(--text-tertiary); }
+  .apt-proc-name { font-size: 12.5px; color: var(--text-primary); font-weight: 500; line-height: 1.3; word-break: break-word; }
+  .apt-proc-colab { font-size: 11px; color: var(--text-tertiary); margin-top: 1px; }
+  .apt-proc-top { margin-bottom: 3px; }
+  .apt-dept { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 700; background: #f3f4f6; color: #374151; letter-spacing: 0.02em; }
+  .apt-comp { font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; }
+  .apt-robo { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: #4f46e5; background: #eef2ff; border: 1px solid #e0e7ff; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+  .apt-op { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-primary); }
+  .apt-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .apt-none { font-size: 11.5px; color: var(--text-tertiary); font-style: italic; }
+  .flt-sep { height: 1px; background: var(--border); margin: 5px 8px; }
+
+  /* Etapas agrupadas DENTRO do fundinho verde (conteúdo dela, estilo nosso) */
+  .apg-list { display: block; }
+  .apg-group { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #15803d; margin: 12px 0 4px; }
+  .apg-list > .apg-group:first-child { margin-top: 0; }
+  .apg-row { display: flex; gap: 9px; align-items: flex-start; padding: 4px 0; }
+  .apg-check { width: 16px; height: 16px; border-radius: 4px; background: var(--success); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .apg-info { flex: 1; min-width: 0; }
+  .apg-name { font-size: 12.5px; color: var(--text-primary); font-weight: 500; line-height: 1.3; }
+  .apg-det { font-size: 11px; color: var(--text-secondary); margin-top: 1px; line-height: 1.4; }
+  .apg-time { font-size: 10.5px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+
+  /* "Próximas etapas" — o que o robô ainda não rodou (cinza, sem data) */
+  .apf-block { margin-top: 18px; }
+  .apf-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); margin-bottom: 6px; }
+  .apf-group { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); margin: 10px 0 3px; opacity: 0.85; }
+  .apf-row { display: flex; gap: 9px; align-items: flex-start; padding: 4px 0; opacity: 0.7; }
+  .apf-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border); background: #fff; flex-shrink: 0; margin-top: 1px; }
+  .apf-name { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.3; }
+  .apf-andamento { font-size: 10px; font-weight: 700; color: var(--brand-blue); margin-left: 6px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .apt-semprazo { font-size: 11.5px; color: var(--text-tertiary); }
+  /* Data do prazo (Hub) no MESMO tamanho das outras colunas, pra padronizar */
+  .apt-row .prazo-cell .prazo-when { font-size: 11.5px; }
+  .apt-row .prazo-cell .client-cnpj { font-size: 10px; }
+  /* Olhinho: MESMO visual do resto (core estiliza como `.lo-row .icon-btn`; aqui a
+     linha é `.apt-row`, então replicamos o mesmo estilo pra não diferenciar). */
+  .apt-row .icon-btn { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .12s; }
+  .apt-row .icon-btn:hover { border-color: var(--brand-blue); color: var(--brand-blue); background: #fff; }
+  /* Ícone do tipo à esquerda da linha: o core estiliza como `.lo-row .type-icon`;
+     nossa linha é `.apt-row`, então replicamos o MESMO acabamento das outras listas
+     (fundo azul-suave + ícone azul + cantos arredondados) — sem isso o ícone fica preto. */
+  .apt-row .type-icon { width: 32px; height: 32px; border-radius: 8px; background: var(--brand-blue-soft); color: var(--brand-blue); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* Stepper de fases do Autopilot: usa o COMPONENTE ÚNICO de linha do tempo do núcleo
+     (.timeline-horizontal / .tl-*). Sem CSS próprio — muda no núcleo, muda aqui também. */
+
+  /* ── Miolo da tarefa do Autopilot no modal (apMiolo) ──────────────────────
+     Estilos COPIADOS de operador-ui.css (só os blocos que apMiolo usa), pra
+     renderizar o passo a passo do robô sem carregar o CSS inteiro dos fluxos
+     (evita conflito com o Tailwind desta tela). Fonte: dp-wizard.js. */
+  .done-block { margin-top: 4px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 9px; }
+  .done-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .timeline-atuacao { display: flex; flex-direction: column; }
+  .ta-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 14px; }
+  .ta-group { position: relative; }
+  .ta-head { display: flex; align-items: center; gap: 10px; }
+  .ta-dot { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: #fff; border: 1px solid #bbf7d0; }
+  .ta-dot svg { width: 15px; height: 15px; stroke-width: 2.25; color: var(--text-secondary); stroke: var(--text-secondary); }
+  .ta-actor { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+  .ta-acoes { border-left: 1.5px solid #bbf7d0; margin-left: 13px; padding: 7px 0 12px 22px; display: flex; flex-direction: column; gap: 9px; }
+  /* Linha-guia contínua: só o último segmento da última macroetapa perde a borda. */
+  .apg-macro:last-child .ta-group:last-child .ta-acoes { border-left-color: transparent; padding-bottom: 0; }
+  .ta-acao { display: flex; gap: 9px; align-items: flex-start; }
+  .ta-acao > i, .ta-acao > svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; stroke-width: 2.25; }
+  .ta-ok > i, .ta-ok > svg { color: #16a34a; stroke: #16a34a; }
+  .ta-op > i, .ta-op > svg { color: var(--text-secondary); stroke: var(--text-secondary); }
+  .ta-trava > i, .ta-trava > svg { color: var(--danger); stroke: var(--danger); }
+  .ta-acao-body { flex: 1; min-width: 0; }
+  .ta-text { font-size: 12.5px; color: var(--text-primary); line-height: 1.4; }
+  .ta-det { font-size: 11px; color: var(--text-secondary); margin-top: 1px; line-height: 1.4; }
+  .ta-time { font-size: 10.5px; color: var(--text-tertiary); white-space: nowrap; flex-shrink: 0; margin-top: 1px; }
+  .ta-trava .ta-text { font-weight: 600; }
+  .ta-obs { margin-top: 7px; font-size: 12px; color: var(--text-primary); background: #fff; border-left: 2px solid #bbf7d0; border-radius: 0 6px 6px 0; padding: 7px 11px; font-style: italic; line-height: 1.5; }
+  .ta-anexos { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  /* Etapa que gerou divergência (robô travou): card vermelho — MESMO padrão de "quando
+     trava" (stopped-card), embutido na timeline com fonte densa. */
+  .ta-acoes .ta-stopped { margin: 1px 0; padding: 9px 11px; }
+  .ta-acoes .ta-stopped .problem-head { font-size: 12.5px; font-weight: 600; gap: 8px; }
+  .ta-acoes .ta-stopped .problem-head i, .ta-acoes .ta-stopped .problem-head svg { width: 15px; height: 15px; }
+  .ta-acoes .ta-stopped .problem-text { font-size: 11px; margin-top: 4px; line-height: 1.45; }
+  .ta-acoes .ta-stopped .ap-crosslink { margin-top: 9px; font-size: 11px; padding: 5px 10px; }
+  /* Chip de anexo (materialChip, dp-wizard.js) — estilos copiados de operador-ui.css. */
+  .material-chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 6px 4px 10px; background: #fff; border: 1px solid var(--border); border-radius: 8px; max-width: 100%; transition: border-color .15s; }
+  .material-chip:hover { border-color: var(--border-strong); }
+  .material-chip > svg { width: 15px; height: 15px; color: var(--text-tertiary); stroke: var(--text-tertiary); flex-shrink: 0; }
+  .material-chip-name { font-size: 12.5px; color: var(--text-primary); white-space: nowrap; }
+  .material-chip-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 7px; border-radius: 5px; flex-shrink: 0; white-space: nowrap; }
+  .material-chip-tag.tag-nf { background: #eff6ff; color: #2563eb; }
+  .material-chip-tag.tag-rel { background: #f5f3ff; color: #7c3aed; }
+  .material-chip-tag.tag-doc { background: var(--surface-subtle); color: var(--text-secondary); }
+  .material-chip-tag.tag-err { background: #fef2f2; color: #dc2626; }
+  .material-chip-actions { display: inline-flex; align-items: center; gap: 1px; margin-left: 2px; padding-left: 6px; border-left: 1px solid var(--border); flex-shrink: 0; }
+  .material-chip-btn { width: 24px; height: 24px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; transition: all .12s; padding: 0; }
+  .material-chip-btn:hover { background: var(--surface-muted); color: var(--brand-pink); }
+  .material-chip-btn svg { width: 14px; height: 14px; stroke: currentColor; }
+  /* Título da macroetapa organiza por cima; a timeline por ator corre dentro dela. */
+  .apg-macro:not(:first-child) { margin-top: 4px; }
+  .timeline-atuacao .apg-group { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #15803d; margin: 10px 0 6px; }
+  .timeline-atuacao .apg-macro:first-child .apg-group { margin-top: 0; }
+  .problem-block { margin-top: 18px; }
+  /* Bloco vermelho "por que parou" (módulo do modal) — densidade consistente com o resto. */
+  .stopped-card { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 12px 14px; }
+  .problem-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .problem-head i, .problem-head svg { width: 16px; height: 16px; color: var(--danger); stroke: var(--danger); stroke-width: 2.25; flex-shrink: 0; }
+  .problem-text { margin-top: 6px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .div-row { display: flex; align-items: stretch; gap: 10px; }
+  .div-cell { flex: 1; background: #fff; border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; }
+  .div-cell-label { font-size: 11.5px; color: var(--text-tertiary); margin-bottom: 5px; }
+  .div-cell-lines { font-size: 13.5px; color: var(--text-primary); line-height: 1.7; font-family: 'JetBrains Mono', monospace; }
+  .div-cell-value { font-size: 16px; font-weight: 700; color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
+  .div-sep { display: flex; align-items: center; font-size: 18px; font-weight: 700; color: var(--text-tertiary); }
+  /* Comparativo (valor × referência) dentro do card de divergência — compacto, pra
+     acompanhar a densidade da timeline. */
+  .ta-cmp { margin-top: 10px; gap: 8px; }
+  .ta-cmp .div-cell { padding: 7px 10px; border-radius: 7px; }
+  .ta-cmp .div-cell-label { font-size: 10.5px; margin-bottom: 3px; }
+  .ta-cmp .div-cell-value { font-size: 13px; }
+  .ta-cmp .div-sep { font-size: 14px; }
+  .need-box { margin-top: 16px; background: #fff; border: 1px dashed var(--border-strong, #d4d4d8); border-left: 3px solid var(--brand-pink); border-radius: 10px; padding: 11px 14px; display: flex; align-items: flex-start; gap: 10px; }
+  .need-box i, .need-box svg { width: 16px; height: 16px; color: var(--brand-pink); stroke: var(--brand-pink); flex-shrink: 0; margin-top: 1px; }
+  .need-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--brand-pink); margin-bottom: 3px; }
+  .need-text { font-size: 12px; color: var(--text-primary); font-weight: 500; line-height: 1.5; }
+  /* Botão de cross-link entre execução ⇄ pendência (dentro do miolo) */
+  .ap-crosslink { margin-top: 12px; display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--brand-blue); background: var(--brand-blue-soft); border: 1px solid var(--brand-blue); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  .ap-crosslink:hover { background: var(--brand-blue); color: #fff; }
+</style>
+</head>
+<body>
+<script>
+/* Stub mínimo de FLOW_CONFIG — só pra cockpit-core.js carregar estilos +
+   shell (sidebar/topbar) sem crashar. Substituímos #screens-container. */
+window.FLOW_CONFIG = {
+  TYPE_METADATA: {}, EXEC_STEPS: 'geral', FORM_TABS_BY_TYPE: {},
+  getInitialState() { return { queue: [], stationed: [], completed: [], messages: {}, notifications: [] }; },
+};
+</script>
+<!-- dp-wizard.js: só pelo apMiolo() — monta o passo a passo do robô no modal das
+     tarefas do Autopilot (mesma fonte dos fluxos). Só declara funções (+2 vars),
+     não colide com o script desta tela. Carregado antes do core, igual aos fluxos. -->
+<script src="../dp-wizard.js"></script>
+<script src="../cockpit-core.js"></script>
+<script src="tarefas.js"></script>
+<!-- dados.js entra também no painel: é onde nascem mock e estado que só o lab tem
+     (T-2106) — sem ele a fila não lista esses casos. -->
+<script src="dados.js"></script>
+<script>
+/* ============================================================
+   Painel de acompanhamento da gestão (read-only) — COCKPIT-179
+   Mock: time da Marina Souza (gerente). Reaproveita helpers do core:
+   esc, getTypeIcon, slaBadge, computePrazo, MOCK_TODAY, slaToMinutes.
+   ============================================================ */
+
+/* ── Overrides locais: ESTE PROTÓTIPO É AUTO-SUFICIENTE ─────────────────────
+   Os 3 ganchos do Autopilot (ícones de processo, pill "Aguard. operador" e a
+   tag "via Autopilot" na linha) vivem AQUI, não no cockpit-core.js. Assim o
+   core compartilhado fica IDÊNTICO ao Git e o acompanhamento original (sem
+   Autopilot) não é afetado em nada. Reaproveita os helpers do core por cima. */
+const AP_TYPE_ICONS = { folha:'users-round', das:'receipt', reinf:'file-text', dctfweb:'file-badge', conciliacao_extratos:'arrow-left-right', conciliacao_dp:'arrow-left-right', conciliacao_fiscal:'arrow-left-right', balancete:'book-open', despesa_aluguel:'home' };
+const _apCoreTypeIcon = getTypeIcon, _apCoreStatePill = statePillHtml;
+getTypeIcon = function (tc) { return AP_TYPE_ICONS[tc] || _apCoreTypeIcon(tc); };
+statePillHtml = function (t, opts) {
+  if (t.hitl) return `<span class="state-pill" style="color:var(--warning);border-color:var(--warning);"><i data-lucide="alert-triangle" class="w-3 h-3"></i>Aguard. operador</span>`;
+  return _apCoreStatePill(t, opts);
+};
+_renderTaskRow = function (t, opts) {
+  opts = opts || {};
+  const isNext = !!opts.isNext, clickable = !!opts.clickable, withEye = !!opts.withEye, onClick = opts.onClick || '';
+  let cls = 'lo-row';
+  if (clickable) cls += ' clickable';
+  if (t.hitl) cls += ' stationed-row'; // HITL: tarja âmbar
+  else if (t.status === 'active' || (t.status === 'stationed' && t.clientResponded)) cls += ' execucao';
+  else if (t.status === 'stationed') cls += ' stationed-row';
+  else if (isNext) cls += ' next-up';
+  const eyeAction = opts.eyeClick || onClick;
+  const eyeBtn = withEye && eyeAction ? `<button class="icon-btn" title="Ver detalhes" onclick="event.stopPropagation(); ${eyeAction}"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>` : '';
+  const onClickAttr = clickable && onClick ? ` onclick="${onClick}"` : '';
+  return `
+    <div class="${cls}"${onClickAttr}>
+      <div class="type-icon" title="${esc(t.type || '')}"><i data-lucide="${getTypeIcon(t.typeCode)}" class="w-4 h-4"></i></div>
+      <div class="lo-solic">
+        <span class="client-name">${esc(t.clientName || '')}</span>
+        ${(() => { const m = domMetaParts(t); return `<span style="display:flex;flex-wrap:wrap;align-items:center;gap:0 6px;"><span class="client-cnpj">${esc(t.cnpj || '')}</span>${m.origem ? `<span class="dom-sep" style="margin:0;">·</span>${m.origem}` : ''}</span>${m.erp}`; })()}
+      </div>
+      <div class="lo-tipo"><span class="lo-proc">${esc(t.type || '')}${t.origin === 'autopilot' ? ' <span class="tag-autopilot">HITL</span>' : ''}</span>${(() => {
+        if (t.origin === 'autopilot') { const p = [t.motor, t.competencia].filter(Boolean).join(' · '); return p ? `<span class="lo-colab">${esc(p)}</span>` : ''; }
+        const c = taskColaborador(t); return c ? `<span class="lo-colab">${esc(c)}</span>` : '';
+      })()}</div>
+      <div>${statePillHtml(t, { isNext })}</div>
+      <div>${solicitadoEmCellHtml(t)}</div>
+      <div style="display: flex; justify-content: flex-end;">${eyeBtn}</div>
+    </div>
+  `;
+};
+
+
+/* ── Miolo do robô = FONTE ÚNICA (dp-wizard.js), carregada acima ───────────────
+   AP_FLUXOS (a "receita" do robô por processo), apBuildMiolo, apCmpHTML, apSegmento,
+   apDoneBlockGrouped, apFuturasBlock e o apMiolo agrupado agora vivem no dp-wizard.js —
+   mesma renderização na tela de tarefa e aqui (mudou num, muda nos dois). Aqui ficam só
+   a CASCA do modal do robô (apStepper, apRoboModalAjusta) e o CSS local (o Tailwind desta
+   tela impede carregar operador-ui.css). */
+// (miolo do robô — apBuildMiolo/apCmpHTML/apSegmento/apDoneBlockGrouped/apFuturasBlock/apMiolo
+//  e AP_FLUXOS/AP_ATOR_ICON — agora na fonte única dp-wizard.js, carregada acima.)
+
+// Mocks (AC_TAREFAS / AC_OPERADORES) = tarefas.js, carregado no <head> — cópia do lab.
+
+const AC_ESTADO_OPTS = [
+  { v:'active', label:'Em execução' }, { v:'processing', label:'Em processamento' }, { v:'hitl', label:'Aguard. operador' }, { v:'queue', label:'Na fila' }, { v:'espera', label:'Em espera' },
+  { v:'completed', label:'Concluída' }, { v:'cancelled', label:'Cancelada' },
+];
+// Departamento/motor: só o Autopilot carimba (DP/Fiscal/Contábil). Tarefas do
+// Hub são todas de DP hoje → default 'DP'. Vira filtro próprio.
+const AC_DEPTO_OPTS = [ { v:'DP', label:'DP' }, { v:'Fiscal', label:'Fiscal' }, { v:'Contábil', label:'Contábil' } ];
+function acMotor(t) { return t.motor || 'DP'; }
+
+// "Hoje" do protótipo é fixo em 14/05/2026 — todo o calendário gira em torno disso.
+function _acToday() { return new Date(2026, 4, 14); }
+function _acStrip(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function _acAddDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function _acDaysAgoDate(n) { return _acAddDays(_acToday(), -n); }
+function _acSameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+function _acFmt(d) { return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0'); }
+
+// Período: presets/calendário vivem no módulo compartilhado do core (PP_PRESETS/ppCreate).
+// Aqui guardamos só o range vigente (default "Hoje") — acInPeriod/KPIs leem daqui; o
+// picker sincroniza via onChange (ver acMount).
+// range: null = "ver todos" (sem período decidido). Igual à fila do operador.
+const _ac = { range: null, search: '', filtros:{ cliente:[], tipo:[], depto:[], operador:[], origem:[], familia:[], estado:[], viaAp:false }, openFlt:null, fltQuery:'', page:1 };
+
+// Família = organização INTERNA e transitória do time de operação (deve sumir no
+// futuro). Não vira coluna nem aparece na linha — só filtra. Lista fixa dos valores
+// de negócio (não deriva dos mocks).
+const AC_FAMILIA_OPTS = [
+  { v:'DEFAULT', label:'Padrão' },
+  { v:'CORP', label:'Corp' },
+  { v:'FAMILY_1', label:'Família 1' },
+  { v:'FAMILY_2', label:'Família 2' },
+  { v:'FAMILY_3', label:'Família 3' },
+  { v:'FAMILY_4', label:'Família 4' },
+  { v:'FAMILY_5', label:'Família 5 Bronze' },
+  { v:'FAMILY_5_SILVER', label:'Família 5 Prata' },
+  { v:'FAMILY_5_GOLD', label:'Família 5 Ouro' },
+  { v:'FAMILY_WISE', label:'Wise' },
+  { v:'BPO_FINANCEIRO', label:'BPO Financeiro' },
+  { v:'NA', label:'N/A' },
+];
+
+function acEstado(t) {
+  if (t.hitl) return 'hitl'; // Autopilot travou numa anomalia → aguarda operador
+  if (t.status === 'processing') return 'processing';
+  if (t.status === 'active') return 'active';
+  if (t.status === 'completed') return 'completed';
+  if (t.status === 'cancelled') return 'cancelled';
+  // Cliente respondeu deixou de ser estado (COCKPIT-959): volta a contar como "Em execução".
+  if (t.status === 'stationed') return t.clientResponded ? 'active' : 'espera';
+  return 'queue';
+}
+function acEstadoLabel(e) { return (AC_ESTADO_OPTS.find(o => o.v === e) || {}).label || e; }
+function acIsOpen(t) { return t.status !== 'completed' && t.status !== 'cancelled'; }
+function acInPeriod(daysAgo) {
+  if (daysAgo === undefined || daysAgo === null) return false;
+  if (!_ac.range) return true; // "ver todos" — sem período, tudo passa
+  const d = _acStrip(_acDaysAgoDate(daysAgo));
+  return d >= _acStrip(_ac.range.from) && d <= _acStrip(_ac.range.to);
+}
+
+// Filtros cliente/tipo/operador recortam toda a base; estado idem; busca casa texto livre.
+function acPassa(t) {
+  const f = _ac.filtros;
+  // O período recorta pela data de SOLICITAÇÃO, então vale pra base inteira — números e
+  // lista. Tarefa em aberto solicitada fora da janela não aparece.
+  if (!acInPeriod(t.createdDaysAgo)) return false;
+  // Lista vazia = dimensão não recorta. Com valores, a tarefa passa se casar com qualquer um.
+  if (f.cliente.length && !f.cliente.includes(t.cnpj)) return false;
+  if (f.tipo.length && !f.tipo.includes(t.typeCode)) return false;
+  if (f.depto.length && !f.depto.includes(acMotor(t))) return false;
+  if (f.origem.length && !f.origem.includes(resolveClientOps(t).origem)) return false;
+  if (f.familia.length && !f.familia.includes(t.familia)) return false;
+  if (f.operador.length && !acPassaOperador(t, f.operador)) return false;
+  // Via Autopilot: tarefa que o robô GEROU pra uma pessoa (mesmo critério da tag) — o HITL loop.
+  if (f.viaAp && !(t.origin === 'autopilot' && t.operatorId !== 'ap')) return false;
+  if (f.estado.length && !f.estado.includes(acEstado(t))) return false;
+  if (_ac.search) {
+    const q = _ac.search.toLowerCase().trim();
+    const op = acOp(t.operatorId);
+    const hay = `${t.clientName} ${t.cnpj} ${t.type} ${op ? op.nome : 'sem dono'}`.toLowerCase();
+    const onlyAlnum = (s) => s.replace(/[^a-z0-9]/g, '');
+    if (!hay.includes(q) && !onlyAlnum(hay).includes(onlyAlnum(q))) return false;
+  }
+  return true;
+}
+// Os agregados (sem dono · robô · qualquer humano) convivem com nomes na mesma seleção.
+function acPassaOperador(t, sel) {
+  return sel.some(v => v === 'none' ? !t.operatorId
+    : v === 'humans' ? (!!t.operatorId && t.operatorId !== 'ap')
+    : t.operatorId === v);
+}
+function acBase() { return AC_TAREFAS.filter(acPassa); }
+// Ordem (regra fechada): por data de recebimento, mais nova no topo — sem pins
+// (concluídas não sobem mais). Mesma regra da fila do operador (sortByRecebimento).
+function acRowsVisiveis(ts) { return sortByRecebimento(ts); }
+function acTemFiltro() { return Object.values(_ac.filtros).some(v => Array.isArray(v) ? v.length > 0 : v); }
+
+/* ---------- números ---------- */
+function acRenderKpis() {
+  const el = document.getElementById('ac-kpis'); if (!el) return;
+  const base = acBase();
+  const concluidas = base.filter(t => t.status === 'completed').length;
+  const canceladas = base.filter(t => t.status === 'cancelled').length;
+  // Uma régua só: ciclo de vida (aberta/concluída) e posse. Em aberto = nem concluída nem
+  // cancelada; Atribuídas + Sem atribuição repartem esse total, então os números fecham a
+  // conta. Motivo da parada (espera, robô travado) e HITL são recortes — vivem nos filtros.
+  const abertas = base.filter(acIsOpen).length;
+  const atribuidas = base.filter(t => acIsOpen(t) && !!t.operatorId).length;
+  const semDono = base.filter(t => acIsOpen(t) && !t.operatorId).length;
+  const kpi = (label, sub, val, cls) => `<div class="ac-kpi"><div class="k-label">${label}</div><div class="k-sub">${sub}</div><div class="k-value ${cls||''}">${val}</div></div>`;
+  el.innerHTML =
+    `<div class="ac-kpi"><div class="k-label">Concluídas</div><div class="k-value success">${concluidas}</div></div>` +
+    `<div class="ac-kpi group-edge"><div class="k-label">Canceladas</div><div class="k-value">${canceladas}</div></div>` +
+    `<div class="ac-kpi-cap"><span>abertas</span></div>` +
+    kpi('Em aberto', 'não encerradas', abertas) +
+    `<div class="ac-kpi"><div class="k-label">Atribuídas</div><div class="k-value">${atribuidas}</div></div>` +
+    kpi('Sem atribuição', 'na fila geral', semDono, semDono > 0 ? 'brand' : '');
+}
+
+/* ---------- filtros ---------- */
+// Cada filtro guarda uma LISTA de valores: vários no mesmo campo = OU (união);
+// campos diferentes seguem sendo E (interseção).
+const AC_FLT_KEYS = ['cliente', 'tipo', 'depto', 'operador', 'origem', 'familia', 'estado'];
+const AC_FLT_DEF = { cliente:'Cliente', tipo:'Processo', depto:'Área', operador:'Atribuído a', origem:'Origem', familia:'Família', estado:'Estado' };
+// Busca dentro do dropdown só onde a lista é longa — Área (3) e Estado (7) cabem inteiras na tela.
+const AC_FLT_BUSCA = { cliente:'Buscar nome ou CNPJ…', tipo:'Buscar processo…', operador:'Buscar operador…', origem:'Buscar origem…', familia:'Buscar família…' };
+// Sem acento e sem pontuação dos dois lados: "18452771" acha "18.452.771/0001-09".
+function acNorm(s) { return (s || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, ''); }
+function acClienteOpts() { const seen = new Set(), out = []; AC_TAREFAS.forEach(t => { if (!seen.has(t.cnpj)) { seen.add(t.cnpj); out.push({ v:t.cnpj, label:t.clientName, cnpj:t.cnpj }); } }); return out.sort((a,b)=>a.label.localeCompare(b.label)); }
+function acTipoOpts() { const seen = new Set(), out = []; AC_TAREFAS.forEach(t => { if (!seen.has(t.typeCode)) { seen.add(t.typeCode); out.push({ v:t.typeCode, label:t.type }); } }); return out.sort((a,b)=>a.label.localeCompare(b.label)); }
+// Ordem: agregados (Sem atribuição · Autopilot · Operadores todos) · ——— · operadores humanos.
+function acOperadorOpts() {
+  const humanos = AC_OPERADORES.filter(o => !o.robo).map(o => ({ v:o.id, label:o.nome }));
+  return [{ v:'none', label:'Sem atribuição' }, { v:'ap', label:'Autopilot', robo:true }, { v:'humans', label:'Operadores (todos)', grupo:true }, ...humanos];
+}
+// Origem: catálogo completo das origens da BHub (mesma fonte da fila do operador), não só as
+// que aparecem na lista — origem sem tarefa no recorte ainda precisa ser escolhível.
+function acOrigemOpts() { return [...new Set(ORIGEM_POOL)].sort((a,b)=>a.localeCompare(b)).map(o => ({ v:o, label:o })); }
+function acFltOpts(k) { return k === 'cliente' ? acClienteOpts() : k === 'tipo' ? acTipoOpts() : k === 'depto' ? AC_DEPTO_OPTS : k === 'operador' ? acOperadorOpts() : k === 'origem' ? acOrigemOpts() : k === 'familia' ? AC_FAMILIA_OPTS : AC_ESTADO_OPTS; }
+// Nenhum valor: nome da dimensão. Um: o valor escolhido. Dois ou mais: dimensão + contador.
+function acFltLabel(k) {
+  const sel = _ac.filtros[k];
+  if (!sel.length) return AC_FLT_DEF[k];
+  if (sel.length > 1) return `${AC_FLT_DEF[k]} · ${sel.length}`;
+  const o = acFltOpts(k).find(o => o.v === sel[0]);
+  return o ? o.label : sel[0];
+}
+function acFltTrigger(k) {
+  const has = _ac.filtros[k].length > 0;
+  const clear = has ? `<span class="flt-clear" data-ac-clear="${k}"><i data-lucide="x" style="width:14px;height:14px;"></i></span>` : '';
+  return `<button class="flt-trigger ${has?'has-val':''}" data-ac-flt="${k}"><span>${esc(acFltLabel(k))}</span>${clear}<i data-lucide="chevron-down" class="flt-chev" style="width:16px;height:16px;"></i></button>`;
+}
+function acFltMenu(k) {
+  if (_ac.openFlt !== k) return '';
+  const sel = _ac.filtros[k];
+  const buscavel = !!AC_FLT_BUSCA[k];
+  const items = acFltOpts(k).map(o => {
+    const robo = (k === 'operador' && o.robo);
+    const grupo = (k === 'operador' && o.grupo);
+    const ic = robo ? '<i data-lucide="bot" style="width:14px;height:14px;color:#4f46e5;flex-shrink:0;"></i>'
+             : grupo ? '<i data-lucide="users-round" style="width:14px;height:14px;color:#6b7280;flex-shrink:0;"></i>' : '';
+    const on = sel.includes(o.v);
+    const box = `<span class="flt-box">${on?'<i data-lucide="check" style="width:12px;height:12px;stroke-width:3;"></i>':''}</span>`;
+    const row = `<div class="flt-item ${on?'on':''}" data-ac-k="${k}" data-ac-opt="${esc(o.v)}" ${buscavel?`data-search="${esc(o.label+' '+(o.cnpj||''))}"`:''}>${box}<div style="display:flex;align-items:center;gap:7px;min-width:0;">${ic}<div style="display:flex;flex-direction:column;min-width:0;"><span>${esc(o.label)}</span>${o.cnpj?`<span class="flt-cnpj">${esc(o.cnpj)}</span>`:''}</div></div></div>`;
+    // separador depois dos agregados (Operadores todos): divide atalhos dos operadores um a um
+    return row + ((k === 'operador' && o.v === 'humans') ? '<div class="flt-sep"></div>' : '');
+  }).join('');
+  const search = buscavel ? `<input class="flt-search" id="ac-flt-${k}-search" placeholder="${AC_FLT_BUSCA[k]}" oninput="acFltBusca(this)">` : '';
+  const foot = sel.length ? `<div class="flt-foot"><button data-ac-limpar="${k}">Limpar seleção</button></div>` : '';
+  return `<div class="flt-menu">${search}${items}${foot}</div>`;
+}
+function acRenderFiltros() {
+  const el = document.getElementById('ac-filtros'); if (!el) return;
+  const on = !!_ac.filtros.viaAp;
+  const toggle = `<button class="flt-toggle ${on?'on':''}" data-ac-viaap="1" title="Só as tarefas direcionadas a operadores a partir do robô">${on?'<i data-lucide="check" class="flt-toggle-ic" style="width:15px;height:15px;"></i>':''}<span>HITL</span></button>`;
+  // Marcar reescreve a barra inteira; sem isto o menu voltaria ao topo a cada clique.
+  const menuAntes = el.querySelector('.flt-menu');
+  const scroll = menuAntes ? menuAntes.scrollTop : 0;
+  el.innerHTML = AC_FLT_KEYS.map(k => `<div class="flt">${acFltTrigger(k)}${acFltMenu(k)}</div>`).join('') + toggle;
+  const menuDepois = el.querySelector('.flt-menu');
+  if (menuDepois) menuDepois.scrollTop = scroll;
+  refreshIcons();
+  // O menu segue aberto entre marcações, então a busca em curso é devolvida ao campo.
+  const s = _ac.openFlt ? document.getElementById('ac-flt-' + _ac.openFlt + '-search') : null;
+  if (s) { s.value = _ac.fltQuery; acFltAplicaBusca(); setTimeout(() => { s.focus(); const n = s.value.length; s.setSelectionRange(n, n); }, 0); }
+}
+// Chips do recorte ativo — um por valor; o primeiro da dimensão carrega o nome dela.
+function acRenderChips() {
+  const el = document.getElementById('ac-chips'); if (!el) return;
+  const chips = [];
+  const chip = (attrs, texto) => `<span class="ac-chip" title="Remover filtro" ${attrs}>${texto}<i data-lucide="x" style="width:13px;height:13px;"></i></span>`;
+  AC_FLT_KEYS.forEach(k => {
+    const sel = _ac.filtros[k]; if (!sel.length) return;
+    const opts = acFltOpts(k);
+    sel.forEach((v, i) => {
+      const o = opts.find(o => o.v === v);
+      chips.push(chip(`data-ac-chip="${k}" data-ac-val="${esc(v)}"`, `${i === 0 ? AC_FLT_DEF[k] + ': ' : ''}<b>${esc(o ? o.label : v)}</b>`));
+    });
+  });
+  if (_ac.filtros.viaAp) chips.push(chip('data-ac-chip="viaAp"', '<b>HITL</b>'));
+  if (_ac.search) chips.push(chip('data-ac-chip="busca"', `Busca: <b>${esc(_ac.search)}</b>`));
+  el.innerHTML = chips.length ? `<span class="ac-chips-label">Filtrando:</span>${chips.join('')}<button class="ac-chips-clear" onclick="acLimparTodos()">Limpar tudo</button>` : '';
+  refreshIcons();
+}
+function acToggleFlt(k) { _ac.openFlt = (_ac.openFlt === k) ? null : k; _ac.fltQuery = ''; if (_ac.openFlt && _pp.ac && _pp.ac.open) { _pp.ac.open = false; ppRender('ac'); } acRenderFiltros(); }
+function acToggleViaAp() { _ac.filtros.viaAp = !_ac.filtros.viaAp; _ac.openFlt = null; _ac.page = 1; acRenderAll(); }
+// Marcar/desmarcar não fecha o menu: a lista atrás responde e a escolha continua.
+function acToggleValor(k, v) {
+  const sel = _ac.filtros[k];
+  const i = sel.indexOf(v);
+  if (i >= 0) sel.splice(i, 1); else sel.push(v);
+  _ac.page = 1;
+  acRenderAll();
+}
+function acLimparFiltro(k) { _ac.filtros[k] = []; _ac.page = 1; acRenderAll(); }
+function acLimparTodos() { AC_FLT_KEYS.forEach(k => _ac.filtros[k] = []); _ac.filtros.viaAp = false; _ac.openFlt = null; _ac.fltQuery = ''; _ac.search = ''; _ac.page = 1; const i = document.getElementById('ac-search-input'); if (i) i.value = ''; acRenderAll(); }
+function acFltBusca(inp) { _ac.fltQuery = inp.value; acFltAplicaBusca(); }
+function acFltAplicaBusca() {
+  const menu = document.querySelector('#ac-filtros .flt-menu'); if (!menu) return;
+  const q = acNorm(_ac.fltQuery);
+  menu.querySelectorAll('.flt-item').forEach(it => { it.style.display = (!q || acNorm(it.dataset.search || '').includes(q)) ? '' : 'none'; });
+  const sep = menu.querySelector('.flt-sep'); if (sep) sep.style.display = q ? 'none' : '';
+}
+// Cliques da barra e dos chips por delegação: o conteúdo é reescrito a cada render.
+function acFltClick(e) {
+  const clear = e.target.closest('[data-ac-clear]');
+  if (clear) { e.stopPropagation(); acLimparFiltro(clear.dataset.acClear); return; }
+  const trig = e.target.closest('[data-ac-flt]');
+  if (trig) { e.stopPropagation(); acToggleFlt(trig.dataset.acFlt); return; }
+  const opt = e.target.closest('[data-ac-opt]');
+  if (opt) { acToggleValor(opt.dataset.acK, opt.dataset.acOpt); return; }
+  const limpar = e.target.closest('[data-ac-limpar]');
+  if (limpar) { acLimparFiltro(limpar.dataset.acLimpar); return; }
+  if (e.target.closest('[data-ac-viaap]')) acToggleViaAp();
+}
+function acChipClick(e) {
+  const c = e.target.closest('[data-ac-chip]'); if (!c) return;
+  const k = c.dataset.acChip;
+  if (k === 'viaAp') { acToggleViaAp(); return; }
+  if (k === 'busca') { acSearchClear(); return; }
+  acToggleValor(k, c.dataset.acVal);
+}
+function acSearch(v) { _ac.search = v; _ac.page = 1; acRenderKpis(); acRenderChips(); acRenderBody(); }
+function acSearchClear() { _ac.search = ''; _ac.page = 1; const i = document.getElementById('ac-search-input'); if (i) i.value = ''; acRenderKpis(); acRenderChips(); acRenderBody(); }
+
+/* ---------- período: delega pro módulo compartilhado do core (ppCreate/ppRender) ---------- */
+function acRenderPeriod() { ppRender('ac'); }
+
+/* ---------- tabela dedicada (colunas próprias) ---------- */
+function apTableHead() {
+  return `<div class="apt-head">
+    <div></div>
+    <div class="h-cell">Cliente</div>
+    <div class="h-cell">Processo</div>
+    <div class="h-cell">Área</div>
+    <div class="h-cell">Competência</div>
+    <div class="h-cell">Estado</div>
+    <div class="h-cell">Solicitado em</div>
+    <div class="h-cell">Atribuído a</div>
+    <div></div>
+  </div>`;
+}
+// Quem está executando: o robô (Autopilot) ou um operador humano — ou ninguém (HITL na fila).
+function apAtribuido(t) {
+  if (t.operatorId === 'ap') return `<span class="apt-robo"><i data-lucide="bot" style="width:13px;height:13px;"></i>Autopilot</span>`;
+  const op = acOp(t.operatorId);
+  if (!op) return `<span class="apt-none">Sem atribuição</span>`;
+  // Sem bolinha de cor por operador — isso exige regra própria e fica pra depois.
+  return `<span class="apt-op">${esc(op.nome)}</span>`;
+}
+function apRow(t) {
+  const ap = t.origin === 'autopilot';
+  let cls = 'apt-row';
+  if (t.hitl) cls += ' r-hitl'; else if (t.status === 'processing') cls += ' r-proc'; else if (t.status === 'active' || (t.status === 'stationed' && t.clientResponded)) cls += ' r-exec';
+  const m = domMetaParts(t);
+  const colab = taskColaborador(t);
+  // Coluna Processo empilhada: via Autopilot (topo) → processo → colaborador (se houver).
+  // Tag "via Autopilot" só em tarefa que o robô gerou PARA um humano (não nas que o próprio
+  // robô executa — senão pareceria que ele gera tarefa pra si mesmo). Ver regra 3.
+  const showTag = ap && t.operatorId !== 'ap';
+  const procTop = showTag ? `<div class="apt-proc-top"><span class="tag-autopilot">HITL</span></div>` : '';
+  // Coluna Processo enxuta: só nome do processo (+ colaborador no Hub). Sem resumo da etapa.
+  const procColab = (!ap && colab) ? `<div class="apt-proc-colab">${esc(colab)}</div>` : '';
+  return `<div class="${cls}" onclick="acVerDetalhes('${t.id}')">
+    <div class="type-icon" title="${esc(t.type || '')}"><i data-lucide="${getTypeIcon(t.typeCode)}" class="w-4 h-4"></i></div>
+    <div style="min-width:0;">
+      <div class="apt-cli-name">${esc(t.clientName || '')}</div>
+      <div class="apt-cli-sub" style="display:flex;flex-wrap:wrap;align-items:center;gap:0 6px;"><span style="font-family:'JetBrains Mono',monospace;">${esc(t.cnpj || '')}</span>${m.origem ? `<span>·</span>${m.origem}` : ''}</div>
+      <div class="apt-cli-sub">${m.erp}</div>
+    </div>
+    <div style="min-width:0;">${procTop}<div class="apt-proc-name">${esc(t.type || '')}</div>${procColab}</div>
+    <div><span class="apt-dept">${esc(acMotor(t))}</span></div>
+    <div class="apt-comp">${esc(t.competencia || '—')}</div>
+    <div>${statePillHtml(t, {})}</div>
+    <div>${solicitadoEmCellHtml(t)}</div>
+    <div>${apAtribuido(t)}</div>
+    <div style="display:flex;justify-content:flex-end;"><button class="icon-btn" title="Espiar no modal antigo (comparação)" onclick="event.stopPropagation(); acVerModal('${t.id}')"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button></div>
+  </div>`;
+}
+
+/* ---------- corpo: lista contínua única ---------- */
+// Sem agrupamento (jul/2026): uma tabela só, recortada pelos filtros, mais nova no
+// topo. Linha do painel = MESMA da fila (fonte única: _renderTaskRow do core),
+// trazendo Origem/ERP/colaborador. Clique na linha e olho abrem o mesmo resumo.
+function acRenderBody() {
+  const el = document.getElementById('ac-body'); if (!el) return;
+  const ts = acRowsVisiveis(acBase());
+  // Cabeçalho da lista no padrão da fila (.section-head do core): contagem no título.
+  const head = `<div class="section-head"><div class="sh-text"><div class="sh-title">Todas as solicitações (${ts.length})</div><div class="sh-sub">Ordenadas por recebimento — as mais recentes no topo</div></div></div>`;
+  if (!ts.length) {
+    const vazio = (acTemFiltro() || _ac.search) ? 'Nenhuma tarefa com esses filtros.' : 'Nenhuma tarefa agora.';
+    el.innerHTML = `${head}<div class="lo-table-wrap"><div style="padding:28px 16px;text-align:center;color:var(--text-tertiary);font-size:13px;">${vazio}</div></div>`;
+    refreshIcons(); return;
+  }
+  // Paginação: mesmo mecanismo/markup da fila (OL_PAGE_SIZE + .lo-pager do core).
+  const pages = Math.max(1, Math.ceil(ts.length / OL_PAGE_SIZE));
+  if (_ac.page > pages) _ac.page = pages;
+  const start = (_ac.page - 1) * OL_PAGE_SIZE;
+  const pageItems = ts.slice(start, start + OL_PAGE_SIZE);
+  const body = pageItems.map(apRow).join('');
+  const from = start + 1, to = start + pageItems.length;
+  const hasPrev = _ac.page > 1, hasNext = to < ts.length;
+  const pager = `<div class="lo-pager">
+    <button class="btn btn-secondary" ${hasPrev ? '' : 'disabled'} onclick="acGoPage(${_ac.page - 1})"><i data-lucide="chevron-left" class="w-4 h-4"></i>Anterior</button>
+    <span class="lo-pager-info">Mostrando ${from}–${to} de ${ts.length}</span>
+    <button class="btn btn-secondary" ${hasNext ? '' : 'disabled'} onclick="acGoPage(${_ac.page + 1})">Próxima<i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+  </div>`;
+  el.innerHTML = `${head}<div class="apt-wrap">${apTableHead()}${body}</div>${pager}`;
+  refreshIcons();
+}
+function acGoPage(p) { _ac.page = p; acRenderBody(); }
+
+/* ---------- drill-down ---------- */
+function _acBackdrop() {
+  let bd = document.getElementById('ac-detail-backdrop');
+  if (!bd) { bd = document.createElement('div'); bd.id = 'ac-detail-backdrop'; bd.className = 'modal-backdrop hidden'; bd.onclick = (e) => { if (e.target === bd) bd.classList.add('hidden'); }; document.body.appendChild(bd); }
+  return bd;
+}
+function _acHeader(t) {
+  return `<div style="display:flex;align-items:center;gap:12px;">
+    <div style="width:44px;height:44px;border-radius:11px;background:var(--brand-blue-soft);color:var(--brand-blue);display:flex;align-items:center;justify-content:center;"><i data-lucide="${getTypeIcon(t.typeCode)}" style="width:22px;height:22px;"></i></div>
+    <div><div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.06em;font-weight:500;">${esc(t.type)}</div>
+    <div style="font-size:17px;font-weight:700;line-height:1.2;">${esc(t.clientName)}</div>
+    <div style="font-size:12px;color:var(--text-secondary);font-family:'JetBrains Mono',monospace;margin-top:2px;">${esc(t.cnpj)}</div></div></div>`;
+}
+// Stepper de fases (só tarefas atribuídas ao Autopilot). Fases = macroetapas na ordem de
+// AP_FLUXOS[apFluxo]; estado por posição da etapa atual (apDone). Usa o COMPONENTE ÚNICO de
+// linha do tempo do núcleo (tlStepperHTML) — mesmo visual da timeline do cliente.
+function apStepper(t) {
+  const fluxo = AP_FLUXOS[t.apFluxo]; if (!fluxo || !fluxo.length) return '';
+  const macros = [];
+  fluxo.forEach((e, i) => { let g = macros.find(x => x.nome === e[0]); if (!g) { g = { nome: e[0], first: i, last: i }; macros.push(g); } else g.last = i; });
+  const cur = t.apDone; const tudoFeito = cur >= fluxo.length;
+  const steps = macros.map(m => {
+    if (m.last < cur) return { label: m.nome, meta: 'Concluído', state: 'done' };
+    if (!tudoFeito && m.first <= cur && cur <= m.last) return { label: m.nome, meta: t.apHitl ? 'Pendente' : 'Em andamento', state: t.apHitl ? 'warn' : 'active' };
+    return { label: m.nome, meta: 'Aguardando', state: 'pending' };
+  });
+  return `<div class="timeline-horizontal">${tlStepperHTML(steps)}</div>`;
+}
+
+// Tarefa atribuída ao Autopilot: o progresso do topo (timeline genérica que o core monta)
+// vira o STEPPER de fases do robô. As abas já não existem pro robô (o core só mostra Resumo).
+function apRoboModalAjusta(t) {
+  const bd = document.getElementById('task-summary-backdrop'); if (!bd) return;
+  const prog = bd.querySelector('#tsm-progress');
+  if (prog) prog.innerHTML = apStepper(t);
+  refreshIcons();
+}
+
+// Protótipo isolado: "Abrir tarefa" / "Atribuir a mim e executar" NÃO navegam pra fora
+// (pra ninguém se perder entrando numa tarefa). Sobrescreve o tsmAbrirTarefa do core — só avisa.
+function tsmAbrirTarefa() {
+  const t = _tsmTask; if (!t) return;
+  const semDono = !t.operatorId && t.status !== 'completed' && t.status !== 'cancelled';
+  const acao = semDono
+    ? 'Ao abrir, a tarefa seria <strong>atribuída a você</strong> e abriria a tela de execução'
+    : 'Aqui abriria a tela de execução';
+  closeTaskSummary();
+  showConfirmModal({
+    title: 'Protótipo — navegação desativada',
+    message: `${acao} de <strong>${esc(t.type || '')}</strong> (${esc(t.clientName || '')}). Neste protótipo a navegação está desligada pra ninguém se perder.`,
+    confirmLabel: 'Entendi', cancelLabel: 'Fechar', onConfirm: null,
+  });
+}
+
+// Navegação entre modais (cross-link execução⇄pendência): fecha o atual com fade e
+// abre o novo com fade — pra deixar CLARO que trocou (a troca instantânea não se percebe).
+function acNavModal(id) {
+  const p = document.querySelector('#task-summary-backdrop .modal-panel');
+  if (p) { p.style.transition = 'opacity .16s ease, transform .16s ease'; p.style.opacity = '0'; p.style.transform = 'translateY(6px) scale(0.985)'; }
+  setTimeout(() => {
+    closeTaskSummary();
+    setTimeout(() => {
+      acVerModal(id);
+      const p2 = document.querySelector('#task-summary-backdrop .modal-panel');
+      if (p2) { p2.style.opacity = '0'; p2.style.transform = 'translateY(6px) scale(0.985)'; requestAnimationFrame(() => { p2.style.transition = 'opacity .18s ease, transform .18s ease'; p2.style.opacity = '1'; p2.style.transform = 'none'; }); }
+    }, 100);
+  }, 170);
+}
+
+/* ── Este painel é a PORTA DO LABORATÓRIO ────────────────────────────────────
+   Cópia do `../acompanhamento.html` que existe só aqui dentro: o clique na linha
+   abre a TELA da tarefa (tela cheia) em vez do modal de espiada. O painel oficial
+   fica intocado — assim ninguém navegando no protótipo publicado cai no lab por
+   acidente. `?v=v1` escolhe a versão; sem parâmetro, cai na primeira do índice. */
+const AC_LAB_VERSAO = (() => {
+  const v = new URLSearchParams(location.search).get('v');
+  return (v && /^v[0-9]/.test(v)) ? v : 'v1-despesa-aluguel';
+})();
+const AC_LAB_KEY = 'lab-despesa-aluguel:painel';
+// Guarda o recorte da lista pra "voltar" cair no mesmo lugar (filtros, busca, página, scroll).
+function acLabSalvaEstado() {
+  try { sessionStorage.setItem(AC_LAB_KEY, JSON.stringify({ filtros: _ac.filtros, search: _ac.search, page: _ac.page, scrollY: window.scrollY })); } catch (e) { /* sessionStorage bloqueado: segue sem preservar */ }
+}
+function acLabRestauraEstado() {
+  let s = null;
+  try { s = JSON.parse(sessionStorage.getItem(AC_LAB_KEY) || 'null'); } catch (e) { s = null; }
+  if (!s) return null;
+  const salvos = s.filtros || {};
+  AC_FLT_KEYS.forEach(k => { const v = salvos[k]; _ac.filtros[k] = Array.isArray(v) ? v : (v ? [v] : []); });
+  _ac.filtros.viaAp = !!salvos.viaAp;
+  _ac.search = s.search || '';
+  _ac.page = s.page || 1;
+  return s;
+}
+
+function acVerDetalhes(id) {
+  acLabSalvaEstado();
+  location.href = AC_LAB_VERSAO + '/tarefa.html?id=' + encodeURIComponent(id);
+}
+
+// O modal de espiada do painel oficial — preservado aqui só como referência de
+// comparação, alcançável pelo olho da linha. É o que a tela cheia vem substituir.
+function acVerModal(id) {
+  const t = AC_TAREFAS.find(x => x.id === id); if (!t) return;
+  // Resumo da tarefa unificado (mesmo modal da fila). "Copiar link" + "Abrir tarefa":
+  // abrir uma tarefa sem dono atribui a quem abre (confirma antes), igual a pegar na fila.
+  const semDono = !t.operatorId && t.status !== 'completed' && t.status !== 'cancelled';
+  const roboAtribuido = t.operatorId === 'ap'; // atribuída ao Autopilot → sem abas + stepper
+  taskSummaryModal(t, { context: 'painel', tab: 'resumo', primary: { label: semDono ? 'Atribuir a mim e executar' : 'Abrir tarefa', icon: semDono ? 'play' : 'arrow-up-right', onClick: 'tsmAbrirTarefa()' } });
+  if (roboAtribuido) apRoboModalAjusta(t);
+}
+function _acOpenPanel(t) {
+  const e = acEstado(t), op = acOp(t.operatorId);
+  const p = computePrazo(t);
+  const campos = (t.campos || []).map(c => `<div class="cmp-field"><div class="f-label">${esc(c.l)}</div><div class="f-val">${esc(c.v)}</div></div>`).join('');
+  return `<div class="modal-panel" onclick="event.stopPropagation()" style="max-width:680px;">
+    <div class="modal-header">${_acHeader(t)}<button class="btn btn-ghost" style="padding:8px;" onclick="document.getElementById('ac-detail-backdrop').classList.add('hidden')"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="state-pill ${ {active:'em-execucao',queue:'na-fila',espera:'em-espera'}[e] }">${esc(acEstadoLabel(e))}</span>
+        <span style="color:var(--text-tertiary);">·</span><span>Prazo: ${p.dateStr} · ${p.timeStr}</span>
+        <span style="color:var(--text-tertiary);">·</span><span>${op ? 'Atribuída a '+esc(op.nome) : 'Sem dono (inbox)'}</span>
+        <span style="color:var(--text-tertiary);">·</span><span>recebida ${esc(t.receivedAt||'')}</span>
+      </div>
+      <div style="background:var(--surface-muted);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;">
+        <div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:6px;">Mensagem do cliente</div>
+        <div style="font-size:13.5px;line-height:1.55;color:var(--text-primary);">${esc(t.clientMessage || '—')}</div>
+      </div>
+      ${campos ? `<div class="cmp-col" style="border-radius:10px;"><div class="cmp-head" style="background:var(--surface-muted);color:var(--text-secondary);">Dados da solicitação</div>${campos}</div>` : ''}
+    </div>
+    <div class="modal-footer">
+      <span style="margin-right:auto;font-size:11.5px;color:var(--text-tertiary);">Somente leitura · acompanhamento</span>
+      <button class="btn btn-secondary" onclick="document.getElementById('ac-detail-backdrop').classList.add('hidden')">Fechar</button>
+      <button class="btn btn-primary" onclick="alert('No protótipo: abriria a tela da tarefa.')"><i data-lucide="arrow-up-right" class="w-4 h-4"></i>Abrir tarefa</button>
+    </div></div>`;
+}
+function _acCompletedPanel(t) {
+  const orig = t.original, feito = t.feito;
+  let body;
+  if (orig && feito) {
+    body = `<div class="cmp-grid">
+      <div class="cmp-col orig"><div class="cmp-head">Solicitação original</div>${orig.map(c => `<div class="cmp-field"><div class="f-label">${esc(c.l)}</div><div class="f-val">${esc(c.v)}</div></div>`).join('')}</div>
+      <div class="cmp-col done"><div class="cmp-head">O que foi feito</div>${feito.map(c => `<div class="cmp-field ${c.changed?'changed':''}"><div class="f-label">${esc(c.l)}</div><div class="f-val">${esc(c.v)}${c.changed?'<span class="cmp-changed-tag">alterado</span>':''}</div></div>`).join('')}</div>
+    </div>`;
+  } else {
+    body = `<div style="background:var(--surface-muted);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:13px;color:var(--text-secondary);">
+      <strong style="color:var(--text-primary);">Solicitação original:</strong> ${esc(t.clientMessage||'—')}<br><br>
+      <span style="color:var(--text-tertiary);font-size:12px;">A comparação detalhada "original × o que foi feito" depende do back guardar o snapshot original (ver decisões em aberto).</span></div>`;
+  }
+  return `<div class="modal-panel" onclick="event.stopPropagation()" style="max-width:760px;">
+    <div class="modal-header">${_acHeader(t)}<button class="btn btn-ghost" style="padding:8px;" onclick="document.getElementById('ac-detail-backdrop').classList.add('hidden')"><i data-lucide="x" class="w-4 h-4"></i></button></div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="state-pill" style="color:var(--success);border-color:var(--success);">Concluída</span>
+        <span style="color:var(--text-tertiary);">·</span><span>entregue ${esc(t.finishedAt||'')}</span>
+        ${acOp(t.operatorId) ? `<span style="color:var(--text-tertiary);">·</span><span>por ${esc(acOp(t.operatorId).nome)}</span>` : ''}
+      </div>
+      ${body}
+    </div>
+    <div class="modal-footer">
+      <span style="margin-right:auto;font-size:11.5px;color:var(--text-tertiary);">Somente leitura · auditoria do que foi entregue</span>
+      <button class="btn btn-secondary" onclick="document.getElementById('ac-detail-backdrop').classList.add('hidden')">Fechar</button>
+    </div></div>`;
+}
+
+/* ---------- montagem ---------- */
+function acRenderAll() { acRenderPeriod(); acRenderKpis(); acRenderFiltros(); acRenderChips(); acRenderBody(); refreshIcons(); }
+function acMount() {
+  const host = document.getElementById('screens-container'); if (!host) { setTimeout(acMount, 40); return; }
+  // Origem de onde o usuário acessou o acompanhamento (passada pelo botão do topbar).
+  const _origem = new URLSearchParams(location.search).get('origem') || 'index.html';
+  host.innerHTML = `<div class="container-wide" style="min-width:840px;">
+    <div class="flex items-center gap-3" style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">
+      <a href="${_origem.replace(/"/g,'&quot;')}" class="cursor-pointer hover:text-rose-500" style="color:inherit;text-decoration:none;">← Voltar ao laboratório</a>
+    </div>
+    <div class="ac-head">
+      <div><div class="ac-title">Acompanhamento de tarefas <span style="font-size:12px;font-weight:700;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:2px 8px;vertical-align:middle;letter-spacing:0.02em;">+ Autopilot</span></div></div>
+    </div>
+    <div class="ac-filterbar">
+      <div class="ac-filters-row"><div class="pp-wrap" id="ac-period"></div><div id="ac-filtros" style="display:contents;"></div></div>
+      <div class="ac-chips" id="ac-chips"></div>
+    </div>
+    <div class="ac-kpis" id="ac-kpis"></div>
+    <div id="ac-body"></div>
+  </div>`;
+  // Avatar do shell vira a gestora (mock)
+  const av = document.querySelector('.sidebar .avatar'); if (av) { av.textContent = 'MS'; av.title = 'Marina Souza (gestora)'; }
+  // Seletor de período — mesmo módulo compartilhado da fila (core: ppCreate).
+  ppCreate('ac', {
+    mount: 'ac-period', emptyLabel: 'Solicitado em', allowEmpty: true, initialRange: null,
+    onChange: () => { _ac.range = ppGetRange('ac'); _ac.page = 1; acRenderKpis(); acRenderChips(); acRenderBody(); },
+    onOpen: () => { if (_ac.openFlt) { _ac.openFlt = null; _ac.fltQuery = ''; acRenderFiltros(); } },
+  });
+  // Restaura o recorte de quem voltou da tela da tarefa + selo dizendo em que versão está.
+  const _labSt = acLabRestauraEstado();
+  const _t = document.querySelector('.ac-title');
+  if (_t) _t.insertAdjacentHTML('beforeend', ` <a href="index.html" class="ac-selo" style="color:var(--brand-pink);border-color:var(--brand-pink);text-decoration:none;" title="Ver os casos do lab">laboratório · despesa de aluguel · ${esc(AC_LAB_VERSAO)}</a>`);
+  document.getElementById('ac-filtros').addEventListener('click', acFltClick);
+  document.getElementById('ac-chips').addEventListener('click', acChipClick);
+  acRenderAll();
+  if (_labSt && _labSt.scrollY) requestAnimationFrame(() => window.scrollTo(0, _labSt.scrollY));
+}
+document.addEventListener('click', (e) => {
+  if (_ac.openFlt && !e.target.closest('.flt')) { _ac.openFlt = null; _ac.fltQuery = ''; acRenderFiltros(); }
+  ppCloseIfOutside('ac', e.target, '#ac-period');
+});
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', acMount); else acMount();
+</script>
+</body>
+</html>
