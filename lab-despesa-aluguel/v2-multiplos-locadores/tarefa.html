@@ -308,8 +308,7 @@ function labCampoEditavel(tab, secao, campo, valor) {
    de outra — pra criar uma v2, copie a pasta inteira e mexa à vontade.
    Compartilhado na raiz do lab: o dado (../dados.js, ../tarefas.js). O formulário
    (./aluguel.js) é desta versão.
-   Nada aqui toca o protótipo publicado: o painel de entrada é ../painel.html,
-   uma cópia que vive dentro do lab. Índice das versões: ../index.html
+   Esta tela é a entrada do fluxo: o menu de protótipos (../../index.html) abre direto aqui.
    ------------------------------------------------------------------------------
    Regras que esta versão materializa:
    1. Ver É entrar: a linha do painel abre esta tela, não um modal.
@@ -351,10 +350,8 @@ const _lab = { t: null, lancAberto: {}, rascunho: {}, anexos: {}, expandido: {},
 
 /* ---------- a tarefa ---------- */
 function labId() { return new URLSearchParams(location.search).get('id') || ''; }
-// Quem chegou pela fila do operador volta pra ela; o resto volta ao painel da versão.
-function labVoltarHref() {
-  return new URLSearchParams(location.search).get('de') === 'fila' ? '../fila.html' : '../painel.html?v=' + LAB_VERSAO;
-}
+// O fluxo é uma tela só: "Voltar" leva ao menu de protótipos.
+function labVoltarHref() { return '../../index.html'; }
 
 // Três tipos (mapa de unificacao-acompanhamento.md): cliente/Hub · HITL (robô→pessoa) · robô.
 function labTipo(t) {
@@ -2283,7 +2280,7 @@ function labMount() {
     host.innerHTML = `<div class="container-wide"><div class="section-card">
       <div class="section-title"><i data-lucide="search-x"></i>Tarefa não encontrada</div>
       <p class="lab-vazio">Nenhuma tarefa com o id <strong>${esc(labId() || '—')}</strong>. Abra uma tarefa a partir do painel.</p>
-      <div style="margin-top:16px;"><a class="btn btn-primary" href="${labVoltarHref()}" style="text-decoration:none;"><i data-lucide="arrow-left" class="w-4 h-4"></i>Ir para o painel</a></div>
+      <div style="margin-top:16px;"><a class="btn btn-primary" href="${labVoltarHref()}" style="text-decoration:none;"><i data-lucide="arrow-left" class="w-4 h-4"></i>Voltar ao menu</a></div>
     </div></div>`;
     refreshIcons(); return;
   }
@@ -2302,7 +2299,7 @@ function labMount() {
   labRoteiro(t).forEach((p, i) => { if (p.nasceAberto) _lab.expandido[i] = true; });
   labRender();
   // Selo do canto: diz em que versão você está e volta pro índice das versões.
-  document.body.insertAdjacentHTML('beforeend', `<a class="lab-flag" href="../index.html" title="Ver todas as versões">laboratório · despesa de aluguel · ${LAB_VERSAO_LABEL}</a>`);
+  document.body.insertAdjacentHTML('beforeend', `<a class="lab-flag" href="../../index.html" title="Voltar ao menu de protótipos">laboratório · despesa de aluguel · ${LAB_VERSAO_LABEL}</a>`);
 }
 
 document.addEventListener('keydown', (e) => {
